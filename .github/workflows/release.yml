@@ -22,7 +22,7 @@ concurrency:
 jobs:
   macos:
     name: Build macOS (Apple silicon)
-    runs-on: macos-14
+    runs-on: macos-latest
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
