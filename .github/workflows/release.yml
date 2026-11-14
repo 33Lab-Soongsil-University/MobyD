@@ -1,0 +1,71 @@
+name: Release
+
+# Push a tag like v0.2.0 (see scripts/set-version.sh) to build the macOS app
+# and publish it as a GitHub release. Every release also carries
+# MobyD-macOS-arm64.dmg, so .../releases/latest/download/MobyD-macOS-arm64.dmg
+# always serves the newest build.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  macos:
+    name: Build macOS (Apple silicon)
+    runs-on: macos-14
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Check the tag matches the app version
+        run: |
+          V="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [ "v$V" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match app version $V (run scripts/set-version.sh)"
+            exit 1
+          fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+      - name: Build app and DMG
+        run: pnpm release
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DMG="src-tauri/target/release/bundle/dmg/MobyD_${VERSION}_arm64.dmg"
+          cp "$DMG" MobyD-macOS-arm64.dmg
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" MobyD-macOS-arm64.dmg --clobber
+          else
+            gh release create "$TAG" "$DMG" MobyD-macOS-arm64.dmg \
+              --title "MobyD $VERSION" --generate-notes --verify-tag
+          fi

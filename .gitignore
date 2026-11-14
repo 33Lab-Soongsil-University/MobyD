@@ -1,0 +1,13 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen/schemas
+.DS_Store
+*.log
+coverage
+
+# local tooling and notes that stay out of the repository
+.claude/
+docs/research/
+*.tsbuildinfo
+src-tauri/Cargo.toml.tmp

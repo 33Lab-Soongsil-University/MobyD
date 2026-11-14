@@ -1,0 +1,54 @@
+[package]
+name = "mobyd"
+version = "0.1.0"
+description = "MobyD — a white-whale Git client"
+authors = ["MobyD contributors"]
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "mobyd_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+urlencoding = "2"
+tiny_http = { version = "0.12", optional = true }
+
+[features]
+# `cargo run --features devbridge --bin mobyd-devbridge` serves the commands over HTTP for browser-based UI work.
+devbridge = ["dep:tiny_http"]
+
+[[bin]]
+name = "mobyd"
+path = "src/main.rs"
+
+[[bin]]
+name = "mobyd-devbridge"
+path = "src/bin/devbridge.rs"
+required-features = ["devbridge"]
+
+[dev-dependencies]
+tempfile = "3"
+tiny_http = "0.12"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+# Must stay "unwind": wry catches the Objective-C exception WebKit throws when a
+# custom-protocol request was cancelled (page reload) just as its answer arrives.
+# With "abort" that catch cannot work and the app dies ("This task has already
+# been stopped"); see src/lib/selftest.ts reloadStress.
+panic = "unwind"
+strip = true
