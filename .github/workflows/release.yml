@@ -1,9 +1,16 @@
 name: Release
 
 # Push a tag like v0.2.0 (see scripts/set-version.sh) to build the macOS app
-# and publish it as a GitHub release. Every release also carries
-# MobyD-macOS-arm64.dmg, so .../releases/latest/download/MobyD-macOS-arm64.dmg
-# always serves the newest build.
+# and publish it twice:
+#   * here, as a release of this (private) repository;
+#   * in the public gyeongjin-kim/MobyD-releases repository, which serves the
+#     download link and the update feed (latest.json) running apps read.
+# This repository cannot write to the public one directly, so the files are
+# pushed to its `incoming` branch with a deploy key and a workflow there
+# turns them into the release.
+#
+# Secrets: TAURI_SIGNING_PRIVATE_KEY (signs the update archive),
+#          RELEASES_DEPLOY_KEY (write access to MobyD-releases).
 on:
   push:
     tags: ["v*"]
@@ -29,6 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0 # the release notes list the commits since the previous tag
 
       - name: Check the tag matches the app version
         run: |
@@ -54,8 +62,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
-      - name: Build app and DMG
-        run: pnpm release
+      - name: Build app, DMG and signed update archive
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          pnpm release
+          test -s src-tauri/target/release/bundle/macos/MobyD.app.tar.gz
+          test -s src-tauri/target/release/bundle/macos/MobyD.app.tar.gz.sig
 
       - name: Publish release
         env:
@@ -69,3 +83,49 @@ jobs:
             gh release create "$TAG" "$DMG" MobyD-macOS-arm64.dmg \
               --title "MobyD $VERSION" --generate-notes --verify-tag
           fi
+
+      - name: Publish to the public releases repository
+        env:
+          DEPLOY_KEY: ${{ secrets.RELEASES_DEPLOY_KEY }}
+          PUBLIC_REPO: gyeongjin-kim/MobyD-releases
+        run: |
+          set -euo pipefail
+          BUNDLE=src-tauri/target/release/bundle
+          mkdir -p "$RUNNER_TEMP/ssh" && chmod 700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/ssh/key" && chmod 600 "$RUNNER_TEMP/ssh/key"
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$RUNNER_TEMP/ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/ssh/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/ssh/known_hosts -o StrictHostKeyChecking=yes"
+
+          # commit subjects since the previous release, without the version bumps
+          PREV="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
+          git log --pretty='- %s' ${PREV:+"$PREV.."}"$TAG" | grep -v '^- Release ' > "$RUNNER_TEMP/notes.md" || true
+          test -s "$RUNNER_TEMP/notes.md" || echo "- Maintenance release" > "$RUNNER_TEMP/notes.md"
+
+          OUT="$RUNNER_TEMP/public"
+          git clone --quiet --depth 1 "git@github.com:$PUBLIC_REPO.git" "$OUT"
+          cd "$OUT"
+          # one fresh commit holding just this version: the branch never grows
+          git checkout --quiet --orphan incoming
+          git rm -r --quiet --cached .
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github -exec rm -rf {} +
+          mkdir dist
+          cp "$GITHUB_WORKSPACE/$BUNDLE/dmg/MobyD_${VERSION}_arm64.dmg" dist/
+          cp "$GITHUB_WORKSPACE/$BUNDLE/macos/MobyD.app.tar.gz" dist/
+          cp "$RUNNER_TEMP/notes.md" dist/notes.md
+          printf '%s\n' "$VERSION" > dist/VERSION
+          SIG="$(cat "$GITHUB_WORKSPACE/$BUNDLE/macos/MobyD.app.tar.gz.sig")" \
+          URL="https://github.com/$PUBLIC_REPO/releases/download/$TAG/MobyD.app.tar.gz" \
+          node -e '
+            const fs = require("fs");
+            fs.writeFileSync("dist/latest.json", JSON.stringify({
+              version: process.env.VERSION,
+              notes: fs.readFileSync("dist/notes.md", "utf8").trim(),
+              pub_date: new Date().toISOString(),
+              platforms: { "darwin-aarch64": { signature: process.env.SIG, url: process.env.URL } },
+            }, null, 2) + "\n");
+          '
+          git add -A .github dist
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "MobyD $VERSION"
+          git push --quiet --force origin incoming
+          rm -rf "$RUNNER_TEMP/ssh"

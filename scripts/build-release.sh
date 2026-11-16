@@ -5,7 +5,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME=~ --remap-path-prefix=$ROOT=."
-pnpm tauri build --bundles app "$@"
+# With the updater signing key in the environment (CI), also produce the
+# signed update archive (MobyD.app.tar.gz + .sig) that running apps download.
+EXTRA=()
+if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  EXTRA=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+fi
+pnpm tauri build --bundles app ${EXTRA[@]+"${EXTRA[@]}"} "$@"
 APP="src-tauri/target/release/bundle/macos/MobyD.app"
 if [[ "$(uname)" == "Darwin" && -d "$APP" ]]; then
   VERSION="$(node -p "require('./package.json').version")"

@@ -1,3 +1,4 @@
+import { UpdateButton } from "./UpdateButton";
 import { Plus, X, FolderGit2, GitFork, Server, Settings, UserRound, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
@@ -65,6 +66,7 @@ export function TopBar() {
         </button>
       </nav>
       <div className="topbar-right">
+        <UpdateButton />
         <button className="palette-btn" onClick={openPalette} title={tr("명령 찾기 (⌘K)")}>
           <Search size={13} />
           <span>{tr("명령 찾기")}</span>

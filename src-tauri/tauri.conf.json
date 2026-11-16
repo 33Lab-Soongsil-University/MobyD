@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MobyD",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "org.mobyd.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -41,5 +41,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc2NjAxREVCNzAzMDJCMkYKUldRdkt6Qnc2eDFnZG5vRXZPejBtYzdJdXRwbzZWcEw1dThGckpITmNSYzJnTlowMnlOVTl6NHYK",
+      "endpoints": [
+        "https://github.com/gyeongjin-kim/MobyD-releases/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

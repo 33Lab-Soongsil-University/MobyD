@@ -7,6 +7,8 @@ import { getCloneDir, pickDirectory, setCloneDir } from "../../lib/actions";
 import { useUi, type PrefsTab } from "../../store";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import { LANG_NAMES, getLangPref, setLangPref, t, type LangPref } from "../../lib/i18n";
+import { canUpdate, checkForUpdate, useUpdate } from "../../lib/updater";
+import { offerUpdate } from "../UpdateButton";
 import { tj } from "../../lib/i18n-react";
 import { ErrorBox } from "../ErrorBox";
 import { useEscape } from "../../lib/escape";
@@ -65,6 +67,45 @@ function General() {
         <span className="mono">{info?.gitPath}</span>
         <span>MobyD</span>
         <span className="mono">{info?.version}</span>
+      </div>
+      {canUpdate() && <UpdateRow />}
+    </div>
+  );
+}
+
+function UpdateRow() {
+  const { phase, version, error, progress } = useUpdate();
+  const busy = phase === "checking" || phase === "downloading" || phase === "installed";
+  const status =
+    phase === "checking"
+      ? t("확인하는 중…")
+      : phase === "current"
+        ? t("최신 버전을 쓰고 있습니다.")
+        : phase === "available"
+          ? t("새 버전 {version}이(가) 있습니다", { version: version ?? "" })
+          : phase === "downloading"
+            ? progress == null
+              ? t("내려받는 중…")
+              : t("내려받는 중 {pct}%", { pct: Math.round(progress * 100) })
+            : phase === "installed"
+              ? t("다시 시작하는 중…")
+              : phase === "error"
+                ? t("업데이트를 확인하지 못했습니다: {error}", { error: error ?? "" })
+                : t("시작할 때와 몇 시간마다 자동으로 확인합니다.");
+  return (
+    <div className="field">
+      <span>{t("업데이트")}</span>
+      <div className="update-row">
+        {phase === "available" ? (
+          <button className="btn primary" onClick={offerUpdate}>
+            {t("업데이트 {version}", { version: version ?? "" })}
+          </button>
+        ) : (
+          <button className="btn" disabled={busy} onClick={() => checkForUpdate()}>
+            {t("업데이트 확인")}
+          </button>
+        )}
+        <small className={phase === "error" ? "red" : "muted"}>{status}</small>
       </div>
     </div>
   );

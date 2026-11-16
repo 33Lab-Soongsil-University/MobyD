@@ -16,6 +16,7 @@ import { handleZoomKey } from "./lib/zoom";
 import { ZoomIndicator } from "./components/ZoomIndicator";
 import { CommandPalette } from "./components/CommandPalette";
 import { startLinkHandling } from "./lib/deeplink";
+import { startUpdateChecks } from "./lib/updater";
 
 function remotePlaceholder(uri: string): RepoInfo {
   const rest = uri.slice("ssh://".length);
@@ -62,6 +63,8 @@ export default function App() {
       runSelftestIfRequested().catch(() => {});
     })();
   }, []);
+
+  useEffect(() => startUpdateChecks(), []);
 
   useEffect(() => {
     if (ready && restored) api.saveTabs(tabs.map((t) => t.root), active).catch(() => {});

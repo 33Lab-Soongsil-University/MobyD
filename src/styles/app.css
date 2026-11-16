@@ -3433,3 +3433,55 @@ select:focus-visible {
   line-height: 1.4;
   color: var(--text-2);
 }
+
+/* update on offer: the one accent-coloured thing in the top bar */
+.update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  max-width: 220px;
+  padding: 0 10px;
+  margin-right: 6px;
+  border-radius: 7px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.update-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.update-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.update-btn > svg {
+  flex-shrink: 0;
+}
+.update-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.update-row small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.update-notes {
+  max-height: 180px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--bg-2);
+  font-family: inherit;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

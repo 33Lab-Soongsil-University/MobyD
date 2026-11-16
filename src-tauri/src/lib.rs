@@ -34,6 +34,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // A self-test run can keep its settings apart from the user's (see `selftest_config`).
             let dir = match (std::env::var_os("MOBYD_SELFTEST_OUT"), std::env::var_os("MOBYD_SELFTEST_CONFIG")) {

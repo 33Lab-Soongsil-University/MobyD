@@ -9,13 +9,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/gyeongjin-kim/MobyD/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/gyeongjin-kim/MobyD?label=release&color=2ed3e6"></a>
+  <a href="https://github.com/gyeongjin-kim/MobyD-releases/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/gyeongjin-kim/MobyD-releases?label=release&color=2ed3e6"></a>
   <a href="https://github.com/gyeongjin-kim/MobyD/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/gyeongjin-kim/MobyD/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20(Apple%20silicon)-lightgrey">
 </p>
 
 <p align="center">
-  <a href="https://github.com/gyeongjin-kim/MobyD/releases/latest/download/MobyD-macOS-arm64.dmg"><b>⬇ Download MobyD for macOS (.dmg)</b></a>
+  <a href="https://github.com/gyeongjin-kim/MobyD-releases/releases/latest/download/MobyD-macOS-arm64.dmg"><b>⬇ Download MobyD for macOS (.dmg)</b></a>
 </p>
 
 <p align="center">
@@ -40,6 +40,7 @@ MobyD started as an answer to the things we kept running into with GitKraken: it
 - **Worktrees** — list, add, open in a new tab, lock, remove.
 - **GitHub, GitLab and Gitea / Forgejo** — sign in with the browser (GitHub) or a token, see every repository your account can reach and clone many at once; list, create, review and merge pull requests.
 - **Dark and light themes**, or follow the system. English and Korean UI.
+- **Updates itself** — one click installs a new version and restarts.
 - **Command palette** (⌘K), readable error messages instead of raw Git output, `mobyd://` links to open a repository from a web page.
 
 <table>
@@ -88,14 +89,16 @@ Pick a host from your `~/.ssh/config`, browse its folders, and open a repository
 
 ## Install
 
-1. Download **[MobyD-macOS-arm64.dmg](https://github.com/gyeongjin-kim/MobyD/releases/latest/download/MobyD-macOS-arm64.dmg)** (always the latest release) and drag MobyD into Applications.
+1. Download **[MobyD-macOS-arm64.dmg](https://github.com/gyeongjin-kim/MobyD-releases/releases/latest/download/MobyD-macOS-arm64.dmg)** (always the latest release) and drag MobyD into Applications.
 2. MobyD is not notarized yet, so the first launch is blocked by Gatekeeper. Right-click MobyD → **Open**, or run:
 
    ```bash
    xattr -dr com.apple.quarantine /Applications/MobyD.app
    ```
 
-Requires macOS on Apple silicon and Git 2.36+ (Xcode Command Line Tools or Homebrew). Past versions and release notes are on the [Releases](https://github.com/gyeongjin-kim/MobyD/releases) page.
+Requires macOS on Apple silicon and Git 2.36+ (Xcode Command Line Tools or Homebrew). Past versions and release notes are on the [Releases](https://github.com/gyeongjin-kim/MobyD-releases/releases) page.
+
+MobyD updates itself: it checks for a new version at launch and every few hours, and an **Update** button in the top bar downloads, verifies and installs it, then restarts the app. Preferences → General has a manual check.
 
 ## Tech stack
 
@@ -138,4 +141,6 @@ Releases are built by GitHub Actions. Bump the version and push a tag:
 scripts/set-version.sh 0.2.0 && git commit -am "Release 0.2.0" && git tag v0.2.0 && git push --follow-tags
 ```
 
-The [release workflow](.github/workflows/release.yml) builds the app on macOS, creates the GitHub release with generated notes, and attaches `MobyD-macOS-arm64.dmg`. The download link above always points to the newest release.
+The [release workflow](.github/workflows/release.yml) builds the app on macOS and publishes it in two places: as a release of this repository, and in the public [MobyD-releases](https://github.com/gyeongjin-kim/MobyD-releases) repository, which serves the download link above and the update feed (`latest.json`) that running apps read.
+
+The update archive is signed with a key that only the workflow has (`TAURI_SIGNING_PRIVATE_KEY`); the app checks that signature with the public key in `src-tauri/tauri.conf.json` before installing anything. Keep a copy of the private key: an app can only accept updates signed with it.
