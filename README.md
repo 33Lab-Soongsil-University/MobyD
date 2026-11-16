@@ -18,6 +18,10 @@
   <a href="https://github.com/gyeongjin-kim/MobyD/releases/latest/download/MobyD-macOS-arm64.dmg"><b>⬇ Download MobyD for macOS (.dmg)</b></a>
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/graph.png" alt="MobyD commit graph with branches, tags, a stash and work in progress" />
+</p>
+
 ---
 
 ## Why "MobyD"?
@@ -38,6 +42,17 @@ MobyD started as an answer to the things we kept running into with GitKraken: it
 - **Dark and light themes**, or follow the system. English and Korean UI.
 - **Command palette** (⌘K), readable error messages instead of raw Git output, `mobyd://` links to open a repository from a web page.
 
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/stage.png" alt="Reviewing a change and staging a single hunk" /></td>
+    <td width="50%"><img src="docs/screenshots/rebase.png" alt="Interactive rebase with pick, fixup and reword" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Review changes and stage a hunk or a line</sub></td>
+    <td align="center"><sub>Interactive rebase — reorder, reword, squash, fixup, drop</sub></td>
+  </tr>
+</table>
+
 ### SSH repositories — the part GitKraken doesn't do
 
 Pick a host from your `~/.ssh/config`, browse its folders, and open a repository that lives there. Graph, staging, commit, merge, rebase, blame, worktrees and pull requests all work as if it were local.
@@ -48,11 +63,28 @@ Pick a host from your `~/.ssh/config`, browse its folders, and open a repository
 - **Follows you between networks** — if the office address in your SSH config doesn't answer, MobyD reaches the same machine over Tailscale and still checks the host key you already trust.
 - Your own SSH setup is used as-is: keys, ssh-agent, ports, ProxyJump.
 
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/ssh-browse.png" alt="Browsing folders on an SSH host from ~/.ssh/config" /></td>
+    <td width="50%"><img src="docs/screenshots/ssh-repo.png" alt="A repository on another machine open in MobyD" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Pick a host from <code>~/.ssh/config</code> and browse its folders</sub></td>
+    <td align="center"><sub>The remote repository opens in a tab marked with its host</sub></td>
+  </tr>
+</table>
+
 | Measured | macOS on LAN | Windows 11 on LAN | Windows 10 via Tailscale relay |
 |---|---|---|---|
 | Open a repository | 0.1 s | 0.6 s | 0.6 s |
 | Refresh the graph | 0.2–0.3 s | 0.5 s | 0.6–0.75 s |
 | Status / diff / blame | 0.1 s | 0.2 s | 0.25 s |
+
+### Light theme
+
+<p align="center">
+  <img src="docs/screenshots/light.png" alt="MobyD in the light theme" />
+</p>
 
 ## Install
 
