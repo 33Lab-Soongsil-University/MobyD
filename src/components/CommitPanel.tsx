@@ -59,7 +59,7 @@ export function CommitPanel() {
   if (!sha)
     return (
       <div className="panel-empty">
-        <span className="empty-whale"><WhaleMark size={64} /></span>
+        <span className="empty-whale"><WhaleMark size={96} /></span>
         <p className="muted">{t("커밋을 선택하세요")}</p>
       </div>
     );

@@ -29,7 +29,7 @@ export function TopBar() {
   return (
     <header className="topbar" data-tauri-drag-region>
       <div className="brand" data-tauri-drag-region>
-        <WhaleMark size={20} />
+        <WhaleMark size={28} />
         <span data-tauri-drag-region>MobyD</span>
       </div>
       <nav className="tabs" ref={nav} data-tauri-drag-region>
