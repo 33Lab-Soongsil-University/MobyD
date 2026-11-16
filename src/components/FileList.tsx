@@ -11,6 +11,9 @@ export interface FileRowItem {
   binary?: boolean;
 }
 
+/** Height of `.file-row` in app.css; long lists are windowed with it. */
+export const FILE_ROW_HEIGHT = 27;
+
 export function StatusBadge({ status }: { status: string }) {
   const s = status === "?" ? "A" : status;
   return (

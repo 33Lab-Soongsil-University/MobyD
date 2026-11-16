@@ -8,12 +8,21 @@ import { copyText, revealPath } from "../lib/actions";
 import { useRepo } from "../repo/RepoContext";
 import { openOnForge } from "../repo/actions";
 import { openMenu } from "../store";
-import { FileRow } from "./FileList";
+import { FILE_ROW_HEIGHT, FileRow } from "./FileList";
+import { WindowedRows } from "./WindowedRows";
 import { WhaleMark } from "./Logo";
 import { t } from "../lib/i18n";
 import { ErrorBox } from "./ErrorBox";
 
+// Recently viewed commits, so stepping back and forth does not ask git again.
+// Bounded: a long session over a big history must not keep every commit's file list.
+const CACHE_MAX = 200;
 const cache = new Map<string, CommitDetail>();
+function remember(key: string, d: CommitDetail) {
+  cache.delete(key);
+  cache.set(key, d);
+  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
+}
 
 export function CommitPanel() {
   const ctx = useRepo();
@@ -37,7 +46,7 @@ export function CommitPanel() {
       .commitDetail(ctx.path, sha)
       .then((d) => {
         if (cancel) return;
-        if (!isStash) cache.set(key, d);
+        if (!isStash) remember(key, d);
         setDetail(d);
         setErr(null);
       })
@@ -131,7 +140,7 @@ export function CommitPanel() {
         </span>
       </div>
       <div className="files">
-        {detail.files.map((f) => (
+        <WindowedRows items={detail.files} rowHeight={FILE_ROW_HEIGHT} render={(f) => (
           <FileRow
             key={f.path}
             f={f}
@@ -147,7 +156,7 @@ export function CommitPanel() {
               ])
             }
           />
-        ))}
+        )} />
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X, Columns2, Rows3, Plus, Minus, Trash2, WrapText } from "lucide-react";
 import { api, errorText } from "../lib/api";
-import { hunkPatch, linesPatch, parseDiff, splitRows, type DiffLine, type FileDiff, type Hunk } from "../lib/diff";
+import { hunkPatch, linesPatch, parseDiff, splitRows, type DiffLine, type FileDiff, type Hunk, type SplitRow } from "../lib/diff";
 import { useRepo } from "../repo/RepoContext";
 import { confirmAction } from "../store";
 import { StatusBadge } from "./FileList";
@@ -50,6 +50,8 @@ export function DiffView() {
 
   const files = useMemo(() => (raw === null ? [] : parseDiff(raw)), [raw]);
   const file: FileDiff | undefined = files[0];
+  // Big diffs only build the lines near the viewport (see HunkLines).
+  const lazy = useMemo(() => (file?.hunks.reduce((n, h) => n + h.lines.length, 0) ?? 0) > LAZY_FROM, [file]);
   const canStage = target.kind === "unstaged";
   const canUnstage = target.kind === "staged";
 
@@ -75,7 +77,7 @@ export function DiffView() {
     setSelected(null);
   };
 
-  const toggleLine = (hi: number, li: number, l: DiffLine) => {
+  const toggleLine = useCallback((hi: number, li: number, l: DiffLine) => {
     if (!(canStage || canUnstage) || (l.kind !== "add" && l.kind !== "del")) return;
     setSelected((prev) => {
       const lines = new Set(prev && prev.hunk === hi ? prev.lines : []);
@@ -83,7 +85,7 @@ export function DiffView() {
       else lines.add(li);
       return lines.size ? { hunk: hi, lines } : null;
     });
-  };
+  }, [canStage, canUnstage]);
 
   const title = target.kind === "commit" ? target.label : { staged: t("스테이징됨"), unstaged: t("스테이징 안 됨"), untracked: t("새 파일") }[target.kind];
 
@@ -164,39 +166,115 @@ export function DiffView() {
                   <Minus size={11} />{" "}{t("헝크 해제")}</button>
               )}
             </div>
-            {mode === "unified" ? (
-              <table className="diff-table">
-                <tbody>
-                  {h.lines.map((l, li) => (
-                    <tr
-                      key={li}
-                      className={`dl ${l.kind}` + (selected?.hunk === hi && selected.lines.has(li) ? " picked" : "")}
-                      onClick={() => toggleLine(hi, li, l)}
-                    >
-                      <td className="ln">{l.oldNo ?? ""}</td>
-                      <td className="ln">{l.newNo ?? ""}</td>
-                      <td className="sign">{l.kind === "add" ? "+" : l.kind === "del" ? "−" : ""}</td>
-                      <td className="code">{l.text || " "}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <table className="diff-table split">
-                <tbody>
-                  {splitRows(h).map((r, i) => (
-                    <tr key={i}>
-                      <SplitCell line={r.left} side="left" />
-                      <SplitCell line={r.right} side="right" />
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <HunkLines
+              hunk={h}
+              hunkIndex={hi}
+              mode={mode}
+              lazy={lazy}
+              picked={selected?.hunk === hi ? selected.lines : null}
+              onToggle={toggleLine}
+            />
           </div>
         ))}
       </div>
     </div>
+  );
+}
+
+/** Diffs longer than this build their lines in blocks, on demand. */
+const LAZY_FROM = 2000;
+const BLOCK = 200;
+/** `line-height` of `.diff-table`, used until a block has been measured. */
+const LINE_HEIGHT = 19;
+
+type ToggleLine = (hunk: number, line: number, l: DiffLine) => void;
+
+/** The lines of one hunk. In a big diff they are cut into blocks and a block
+ *  far from the viewport is a spacer of the same height. */
+const HunkLines = memo(function HunkLines({ hunk, hunkIndex, mode, lazy, picked, onToggle }: { hunk: Hunk; hunkIndex: number; mode: Mode; lazy: boolean; picked: Set<number> | null; onToggle: ToggleLine }) {
+  const rows = useMemo(() => (mode === "split" ? splitRows(hunk) : null), [mode, hunk]);
+  const total = rows ? rows.length : hunk.lines.length;
+  const blocks: number[] = [];
+  for (let i = 0; i < total; i += BLOCK) blocks.push(i);
+  return (
+    <table className={"diff-table" + (rows ? " split" : "")}>
+      {rows ? (
+        <colgroup>
+          <col className="col-ln" />
+          <col />
+          <col className="col-ln" />
+          <col />
+        </colgroup>
+      ) : (
+        <colgroup>
+          <col className="col-ln" />
+          <col className="col-ln" />
+          <col className="col-sign" />
+          <col />
+        </colgroup>
+      )}
+      {blocks.map((start) => (
+        <LineBlock key={start} hunk={hunk} hunkIndex={hunkIndex} rows={rows} start={start} end={Math.min(total, start + BLOCK)} lazy={lazy} picked={picked} onToggle={onToggle} />
+      ))}
+    </table>
+  );
+});
+
+function LineBlock({ hunk, hunkIndex, rows, start, end, lazy, picked, onToggle }: { hunk: Hunk; hunkIndex: number; rows: SplitRow[] | null; start: number; end: number; lazy: boolean; picked: Set<number> | null; onToggle: ToggleLine }) {
+  const body = useRef<HTMLTableSectionElement>(null);
+  const height = useRef((end - start) * LINE_HEIGHT);
+  const [near, setNear] = useState(!lazy);
+
+  useEffect(() => {
+    if (!lazy) {
+      setNear(true);
+      return;
+    }
+    const el = body.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        // keep the real height (long lines wrap) so the scrollbar does not jump
+        if (!entry.isIntersecting && el.dataset.built) height.current = el.offsetHeight;
+        setNear(entry.isIntersecting);
+      },
+      // the margin only counts against the scrolling panel itself, not the window
+      { root: el.closest(".diff-body"), rootMargin: "1200px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [lazy]);
+
+  if (!near) {
+    return (
+      <tbody ref={body}>
+        <tr style={{ height: height.current }}>
+          <td colSpan={4} />
+        </tr>
+      </tbody>
+    );
+  }
+  return (
+    <tbody ref={body} data-built="1">
+      {rows
+        ? rows.slice(start, end).map((r, i) => (
+            <tr key={start + i}>
+              <SplitCell line={r.left} side="left" />
+              <SplitCell line={r.right} side="right" />
+            </tr>
+          ))
+        : hunk.lines.slice(start, end).map((l, i) => {
+            const li = start + i;
+            return (
+              <tr key={li} className={`dl ${l.kind}` + (picked?.has(li) ? " picked" : "")} onClick={() => onToggle(hunkIndex, li, l)}>
+                <td className="ln">{l.oldNo ?? ""}</td>
+                <td className="ln">{l.newNo ?? ""}</td>
+                <td className="sign">{l.kind === "add" ? "+" : l.kind === "del" ? "−" : ""}</td>
+                <td className="code">{l.text || " "}</td>
+              </tr>
+            );
+          })}
+    </tbody>
   );
 }
 

@@ -1695,6 +1695,14 @@ textarea {
   line-height: 19px;
   table-layout: fixed;
 }
+/* widths live on the columns: with a fixed layout the first row sets them,
+   and in a big diff the first row can be a spacer */
+.diff-table .col-ln {
+  width: 48px;
+}
+.diff-table .col-sign {
+  width: 16px;
+}
 .diff-table td {
   padding: 0;
   vertical-align: top;

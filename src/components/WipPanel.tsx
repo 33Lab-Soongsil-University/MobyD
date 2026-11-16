@@ -14,7 +14,8 @@ import { copyText, revealPath } from "../lib/actions";
 import { joinPath } from "../lib/format";
 import { useRepo } from "../repo/RepoContext";
 import { confirmAction, openMenu } from "../store";
-import { FileRow } from "./FileList";
+import { FILE_ROW_HEIGHT, FileRow } from "./FileList";
+import { WindowedRows } from "./WindowedRows";
 import { t } from "../lib/i18n";
 
 function draftKey(path: string) {
@@ -205,7 +206,7 @@ export function WipPanel() {
           </div>
           <p className="conflict-help">{t("파일마다 어느 쪽을 쓸지 고르거나, 직접 고친 뒤 ✓를 눌러 해결로 표시하세요.")}</p>
           <div className="files">
-            {conflicted.map((f) => (
+            <WindowedRows items={conflicted} rowHeight={FILE_ROW_HEIGHT} render={(f) => (
               <FileRow
                 key={f.path}
                 f={f}
@@ -255,7 +256,7 @@ export function WipPanel() {
                   </>
                 }
               />
-            ))}
+            )} />
           </div>
         </div>
       )}
@@ -290,7 +291,7 @@ export function WipPanel() {
             {unstaged.length === 0 && (
               <p className="sb-empty">{t("변경 없음")}</p>
             )}
-            {unstaged.map((f) => (
+            <WindowedRows items={unstaged} rowHeight={FILE_ROW_HEIGHT} render={(f) => (
               <FileRow
                 key={"u" + f.path}
                 f={f}
@@ -335,7 +336,7 @@ export function WipPanel() {
                   </>
                 }
               />
-            ))}
+            )} />
           </div>
         </div>
       )}
@@ -362,7 +363,7 @@ export function WipPanel() {
             {staged.length === 0 && (
               <p className="sb-empty">{t("스테이징된 파일이 없습니다")}</p>
             )}
-            {staged.map((f) => (
+            <WindowedRows items={staged} rowHeight={FILE_ROW_HEIGHT} render={(f) => (
               <FileRow
                 key={"s" + f.path}
                 f={f}
@@ -396,7 +397,7 @@ export function WipPanel() {
                   </button>
                 }
               />
-            ))}
+            )} />
           </div>
         </div>
       )}
