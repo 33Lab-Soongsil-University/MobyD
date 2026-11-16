@@ -123,7 +123,7 @@ export function SshBrowser({
               {listing?.entries.map((e) => (
                 <div
                   key={e.name}
-                  className={"ssh-entry" + (e.isRepo ? " repo" : "")}
+                  className={"ssh-entry" + (e.isRepo ? " is-repo" : "")}
                   title={e.name}
                   onDoubleClick={() => (e.isRepo && mode === "open" ? onPick(host, join(listing.path, e.name), true) : go(host, join(listing.path, e.name)))}
                 >

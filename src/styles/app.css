@@ -2445,7 +2445,7 @@ ul.recent li:hover {
 .ssh-entry:hover {
   background: var(--hover);
 }
-.ssh-entry.repo {
+.ssh-entry.is-repo {
   font-weight: 600;
 }
 .ssh-actions {
