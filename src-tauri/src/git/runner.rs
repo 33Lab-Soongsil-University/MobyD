@@ -106,7 +106,9 @@ pub fn exec(repo: &Path, args: &[OsString], env: &[(&str, &str)], stdin: Option<
     })?;
     if let Some(input) = stdin {
         if let Some(mut pipe) = child.stdin.take() {
-            pipe.write_all(input)?;
+            // git that rejected its arguments has already gone and the write fails with
+            // a broken pipe: its own message says why, so keep going and reap it.
+            let _ = pipe.write_all(input);
         }
     }
     Ok(child.wait_with_output()?)

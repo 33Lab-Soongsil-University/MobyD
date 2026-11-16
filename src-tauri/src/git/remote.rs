@@ -400,22 +400,53 @@ fn ssh_base(host: &str) -> Command {
     cmd
 }
 
-fn run_ssh(host: &str, remote_cmd: &str, stdin: Option<&[u8]>) -> AppResult<Output> {
-    let attempt = || -> AppResult<Output> {
-        let mut cmd = ssh_base(host);
-        cmd.arg("--").arg(host).arg(remote_cmd);
-        if stdin.is_some() {
-            cmd.stdin(Stdio::piped());
+thread_local! {
+    /// Set while this thread runs a command that changes the repository.
+    static MUTATING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Marks the commands run on this thread as repository changes until dropped.
+pub struct Mutating(bool);
+
+/// A change must never be sent twice: while the guard lives, a command whose
+/// connection broke is only retried when it certainly never started.
+pub fn mutating() -> Mutating {
+    Mutating(MUTATING.with(|m| m.replace(true)))
+}
+
+impl Drop for Mutating {
+    fn drop(&mut self) {
+        MUTATING.with(|m| m.set(self.0));
+    }
+}
+
+/// One ssh process: send `stdin` if any, collect everything.
+fn spawn_ssh(host: &str, remote_cmd: &str, stdin: Option<&[u8]>) -> AppResult<Output> {
+    let mut cmd = ssh_base(host);
+    cmd.arg("--").arg(host).arg(remote_cmd);
+    if stdin.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
+    let mut child = cmd.spawn().map_err(|e| AppError::Git(crate::trf!("ssh를 실행할 수 없습니다: {e}", "Could not run ssh: {e}")))?;
+    if let Some(input) = stdin {
+        if let Some(mut pipe) = child.stdin.take() {
+            // ssh that failed to connect has already gone: the write then fails with
+            // a broken pipe. Its exit status and stderr say why, so keep going and
+            // always reap the process.
+            let _ = pipe.write_all(input);
         }
-        let mut child =
-            cmd.spawn().map_err(|e| AppError::Git(crate::trf!("ssh를 실행할 수 없습니다: {e}", "Could not run ssh: {e}")))?;
-        if let Some(input) = stdin {
-            if let Some(mut pipe) = child.stdin.take() {
-                pipe.write_all(input)?;
-            }
-        }
-        Ok(child.wait_with_output()?)
-    };
+    }
+    Ok(child.wait_with_output()?)
+}
+
+/// Whether a failed command is worth sending again.
+pub fn should_retry(stderr: &[u8], mutating: bool) -> bool {
+    never_started(stderr) || (!mutating && is_stale_connection(stderr))
+}
+
+/// Run on the best route for `host`, re-routing or retrying once when the connection is at fault.
+fn run_routed(host: &str, remote_cmd: &str, stdin: Option<&[u8]>) -> AppResult<Output> {
+    let attempt = || spawn_ssh(host, remote_cmd, stdin);
     // First contact this session: if the configured address does not answer
     // from this network, go through Tailscale right away (no 10 s timeout).
     static CHECKED: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
@@ -431,20 +462,88 @@ fn run_ssh(host: &str, remote_cmd: &str, stdin: Option<&[u8]>) -> AppResult<Outp
             return attempt();
         }
     }
-    // 255 is ssh's own failure. Retry once (reads only) when a shared connection went stale;
-    // an unreachable host is reported right away instead of waiting for a second timeout.
-    if out.status.code() == Some(255) && stdin.is_none() && out.stdout.is_empty() && is_stale_connection(&out.stderr) {
+    // 255 is ssh's own failure. A shared connection that went stale (sleep, network
+    // change) is retried once on a fresh one; an unreachable host is reported right
+    // away instead of waiting for a second timeout.
+    if out.status.code() == Some(255) && out.stdout.is_empty() && should_retry(&out.stderr, MUTATING.with(|m| m.get())) {
         return attempt();
     }
     Ok(out)
 }
 
-/// ssh errors that mean "the multiplexed connection died", worth one retry.
+/// Connection state of one host, shared by every command sent to it.
+#[derive(Default)]
+struct Link {
+    /// A command got through since the last connection failure.
+    established: std::sync::atomic::AtomicBool,
+    /// Held by the one command allowed to (re)connect.
+    gate: Mutex<()>,
+    /// The last connection failure, handed to commands that were waiting for it.
+    failed: Mutex<Option<(std::time::Instant, Output)>>,
+}
+
+fn link(host: &str) -> std::sync::Arc<Link> {
+    static LINKS: OnceLock<Mutex<HashMap<String, std::sync::Arc<Link>>>> = OnceLock::new();
+    LINKS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner()).entry(host.to_string()).or_default().clone()
+}
+
+/// Run `remote_cmd` on `host`.
+///
+/// While there is no working connection (first use, or after a failure) the
+/// commands go one at a time: the first one opens the shared connection and the
+/// rest then ride on it. Opening a dozen connections at once — several tabs
+/// restored at launch, a reconnect after sleep — makes sshd drop some of them
+/// (MaxStartups). And when that first command cannot connect, the ones that
+/// were waiting get its error instead of each waiting out the timeout again.
+pub(crate) fn run_ssh(host: &str, remote_cmd: &str, stdin: Option<&[u8]>) -> AppResult<Output> {
+    use std::sync::atomic::Ordering::SeqCst;
+    let link = link(host);
+    let run = |link: &Link| -> AppResult<Output> {
+        let out = run_routed(host, remote_cmd, stdin)?;
+        if out.status.code() == Some(255) {
+            link.established.store(false, SeqCst);
+        }
+        Ok(out)
+    };
+    if link.established.load(SeqCst) {
+        return run(&link);
+    }
+    let asked = std::time::Instant::now();
+    let guard = link.gate.lock().unwrap_or_else(|e| e.into_inner());
+    if link.established.load(SeqCst) {
+        drop(guard);
+        return run(&link);
+    }
+    if let Some((at, out)) = &*link.failed.lock().unwrap_or_else(|e| e.into_inner()) {
+        if *at >= asked {
+            return Ok(out.clone());
+        }
+    }
+    let out = run(&link)?;
+    let mut failed = link.failed.lock().unwrap_or_else(|e| e.into_inner());
+    if out.status.code() == Some(255) {
+        *failed = Some((std::time::Instant::now(), out.clone()));
+    } else {
+        *failed = None;
+        link.established.store(true, SeqCst);
+    }
+    Ok(out)
+}
+
+/// ssh errors that mean "the multiplexed connection died", worth one retry
+/// for commands that only read.
 pub fn is_stale_connection(stderr: &[u8]) -> bool {
     let e = String::from_utf8_lossy(stderr).to_lowercase();
     ["mux_client", "control socket", "controlsocket", "master", "broken pipe", "connection reset", "connection closed"]
         .iter()
         .any(|k| e.contains(k))
+}
+
+/// ssh errors raised while attaching to the shared connection, before the
+/// command was handed over: safe to retry even for a command that changes things.
+pub fn never_started(stderr: &[u8]) -> bool {
+    let e = String::from_utf8_lossy(stderr).to_lowercase();
+    ["control socket connect", "refused session request", "session request failed", "mux_client_hello_exchange"].iter().any(|k| e.contains(k))
 }
 
 pub fn ssh_error(host: &str, out: &Output) -> Option<AppError> {

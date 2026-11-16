@@ -48,6 +48,8 @@ where
     let lock = repo_lock(&repo);
     blocking(move || {
         let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        // over SSH, a change is never re-sent after a connection that broke mid-command
+        let _mutating = crate::git::remote::mutating();
         f()
     })
     .await

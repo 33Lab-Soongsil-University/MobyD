@@ -447,6 +447,29 @@ case "$host" in
     { cat <&3; exec 3<&-; sleep 120; } >"$fifo" 2>/dev/null </dev/null &
     exec 3<&- 4<"$fifo"; rm -f "$fifo"
     exec /bin/sh -c "$cmd" <&4 4<&- ;;
+  # the shared connection died while the laptop slept: fails once, then works
+  fakestale-*|fakerefused-*)
+    mark="${TMPDIR:-/tmp}/mobyd-$host.seen"
+    echo x >>"${TMPDIR:-/tmp}/mobyd-$host.log"
+    if [ ! -e "$mark" ]; then
+      : >"$mark"
+      case "$host" in
+        fakestale-*) echo "mux_client_request_session: read from master failed: Broken pipe" >&2 ;;
+        *) echo "Control socket connect(/tmp/mobyd/abc): Connection refused" >&2 ;;
+      esac
+      exit 255
+    fi
+    exec /bin/sh -c "$cmd" ;;
+  # refuses the connection without reading what is sent
+  fakedeny) echo "user@fakedeny: Permission denied (publickey)." >&2; exit 255 ;;
+  # slow to answer; logs when each command starts and ends
+  fakeslow-*)
+    log="${TMPDIR:-/tmp}/mobyd-$host.log"
+    echo S >>"$log"; sleep 0.3; /bin/sh -c "$cmd"; rc=$?; echo E >>"$log"; exit $rc ;;
+  # unreachable, after a wait
+  fakedown-*)
+    echo x >>"${TMPDIR:-/tmp}/mobyd-$host.log"; sleep 0.4
+    echo "ssh: connect to host $host port 22: Operation timed out" >&2; exit 255 ;;
   *) exec /bin/sh -c "$cmd" ;;
 esac
 "#,
@@ -791,4 +814,101 @@ fn input_without_eof_does_not_hang() {
     let snap = super::snapshot::load(&rp, 100).unwrap();
     assert_eq!(snap.status.staged.len(), 300);
     assert!(started.elapsed() < std::time::Duration::from_secs(60), "waited for EOF: {:?}", started.elapsed());
+}
+
+fn fake_state(host: &str) -> (PathBuf, PathBuf) {
+    fake_ssh();
+    let dir = std::env::temp_dir();
+    let (log, seen) = (dir.join(format!("mobyd-{host}.log")), dir.join(format!("mobyd-{host}.seen")));
+    let _ = std::fs::remove_file(&log);
+    let _ = std::fs::remove_file(&seen);
+    (log, seen)
+}
+
+fn log_lines(log: &Path) -> Vec<String> {
+    std::fs::read_to_string(log).unwrap_or_default().lines().map(String::from).collect()
+}
+
+/// A read whose shared connection died (sleep, network change) is sent again
+/// on a fresh connection, whether it travels on the command line or as stdin.
+#[test]
+fn stale_connection_is_retried_for_reads() {
+    let (log, _) = fake_state("fakestale-read");
+    let out = super::remote::run_ssh("fakestale-read", "echo hello", None).unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "hello\n");
+    assert_eq!(log_lines(&log).len(), 2);
+
+    let (log, _) = fake_state("fakestale-stdin");
+    let out = super::remote::run_ssh("fakestale-stdin", "cat", Some(b"payload\n")).unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "payload\n", "stdin is sent again with the retry");
+    assert_eq!(log_lines(&log).len(), 2);
+}
+
+/// A change is not sent twice when the connection broke at a point where it
+/// may already have run; it is when ssh never got to hand it over.
+#[test]
+fn changes_are_only_retried_when_they_never_started() {
+    let (log, _) = fake_state("fakestale-write");
+    {
+        let _m = super::remote::mutating();
+        let out = super::remote::run_ssh("fakestale-write", "echo changed", None).unwrap();
+        assert_eq!(out.status.code(), Some(255), "reported, not repeated");
+        assert_eq!(log_lines(&log).len(), 1);
+    }
+    let (log, _) = fake_state("fakerefused-write");
+    let _m = super::remote::mutating();
+    let out = super::remote::run_ssh("fakerefused-write", "echo changed", None).unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "changed\n");
+    assert_eq!(log_lines(&log).len(), 2);
+}
+
+/// ssh that fails before reading its input must report its own error, not a
+/// broken pipe from our side (and must not be left behind as a zombie).
+#[test]
+fn connection_failure_with_pending_input_reports_the_ssh_error() {
+    fake_ssh();
+    let big = vec![b'x'; 2 * 1024 * 1024];
+    let out = super::remote::run_ssh("fakedeny", "cat", Some(&big)).unwrap();
+    assert_eq!(out.status.code(), Some(255));
+    let e = super::remote::ssh_error("fakedeny", &out).unwrap().to_string();
+    assert!(e.contains("Permission denied"), "{e}");
+}
+
+/// Commands that arrive together on a host with no connection yet do not all
+/// connect at once: the first one finishes before any other starts.
+#[test]
+fn first_contact_opens_one_connection() {
+    let (log, _) = fake_state("fakeslow-gate");
+    std::thread::scope(|s| {
+        for i in 0..6 {
+            s.spawn(move || {
+                let out = super::remote::run_ssh("fakeslow-gate", &format!("echo {i}"), None).unwrap();
+                assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{i}\n"));
+            });
+        }
+    });
+    let lines = log_lines(&log);
+    assert_eq!(lines.len(), 12);
+    assert_eq!(&lines[..2], ["S", "E"], "the first command had the host to itself: {lines:?}");
+    assert!(lines[2..].windows(2).any(|w| w == ["S", "S"]), "afterwards they run side by side: {lines:?}");
+}
+
+/// When the host is unreachable, commands that were waiting share the one
+/// failure instead of each sitting through the timeout; a later one tries again.
+#[test]
+fn waiting_commands_share_a_connection_failure() {
+    let (log, _) = fake_state("fakedown-shared");
+    let started = std::time::Instant::now();
+    std::thread::scope(|s| {
+        for _ in 0..5 {
+            s.spawn(|| {
+                let out = super::remote::run_ssh("fakedown-shared", "echo x", None).unwrap();
+                assert!(super::remote::ssh_error("fakedown-shared", &out).unwrap().to_string().contains("timed out"));
+            });
+        }
+    });
+    assert_eq!(log_lines(&log).len(), 1, "one attempt for the five");
+    assert!(started.elapsed() < std::time::Duration::from_millis(1500), "{:?}", started.elapsed());
+    let _ = super::remote::run_ssh("fakedown-shared", "echo x", None).unwrap();
+    assert_eq!(log_lines(&log).len(), 2, "a new command tries again");
 }
