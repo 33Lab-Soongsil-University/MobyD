@@ -138,7 +138,7 @@ More detail (shortcuts, the dev bridge for working on the UI in a browser, the s
 Releases are built by GitHub Actions. Bump the version and push a tag:
 
 ```bash
-scripts/set-version.sh 0.2.0 && git commit -am "Release 0.2.0" && git tag v0.2.0 && git push --follow-tags
+scripts/set-version.sh 0.2.0 && git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin main v0.2.0
 ```
 
 The [release workflow](.github/workflows/release.yml) builds the app on macOS and publishes it in two places: as a release of this repository, and in the public [MobyD-releases](https://github.com/gyeongjin-kim/MobyD-releases) repository, which serves the download link above and the update feed (`latest.json`) that running apps read.
