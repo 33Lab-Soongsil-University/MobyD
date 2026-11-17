@@ -14,6 +14,10 @@ fi
 pnpm tauri build --bundles app ${EXTRA[@]+"${EXTRA[@]}"} "$@"
 APP="src-tauri/target/release/bundle/macos/MobyD.app"
 if [[ "$(uname)" == "Darwin" && -d "$APP" ]]; then
+  # The bundle must carry a complete (ad-hoc) signature with sealed resources:
+  # with only the linker's signature on the executable, macOS calls a
+  # downloaded copy "damaged" and refuses to open it at all.
+  codesign --verify --deep --strict "$APP"
   VERSION="$(node -p "require('./package.json').version")"
   ARCH="$(uname -m)"
   mkdir -p src-tauri/target/release/bundle/dmg

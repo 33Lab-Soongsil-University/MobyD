@@ -26,7 +26,7 @@
 
 ## Why "MobyD"?
 
-GitKraken is named after the **Kraken**, the giant squid of sea legend. The giant squid has exactly one natural enemy: the **sperm whale**. The most famous sperm whale of all is **Moby Dick**, the white whale — hence **MobyD**. The logo is that whale seen from far below, hanging upright in the deep under rings of light from the surface, with branches running along the rings.
+GitKraken is named after the **Kraken**, the giant squid of sea legend. The giant squid has exactly one natural enemy: the **sperm whale**. The most famous sperm whale of all is **Moby Dick**, the white whale — hence **MobyD**. The logo is that whale seen from far below, hanging upright in the deep under rings of light from the surface, with a branch forking along the rings.
 
 MobyD started as an answer to the things we kept running into with GitKraken: it is heavy (a full Electron app), and it cannot work on a repository that lives on *another* computer. MobyD is a small native app (~7 MB) that treats a repository on your SSH-reachable PC the same as one on your laptop.
 

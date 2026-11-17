@@ -1,20 +1,20 @@
 /**
  * MobyD's mark (original artwork): a sperm whale seen from far below, hanging
  * upright in the deep — the blunt head, two small fins, the flukes — under
- * rings of light from the surface. Branches run along the rings and cross
- * from one to the next, like lanes in a commit graph.
+ * rings of light from the surface. A branch runs along the inner ring and
+ * one fork leaves it for the next ring, like a lane in a commit graph.
  */
 const WHALE =
   "M50 3 C60 3 66.5 7 67 16 C67.8 27 69.4 37 69 47 C74.5 51 80 58 82 67 C75.5 65 70.5 62 67.6 58.5 C65 78 58.5 100 53.4 118 C59 123 73 127 85 139 C72 134.5 60 133 50 136 C40 133 28 134.5 15 139 C27 127 41 123 46.6 118 C41.5 100 35 78 32.4 58.5 C29.5 62 24.5 65 18 67 C20 58 25.5 51 31 47 C30.6 37 32.2 27 33 16 C33.5 7 40 3 50 3 Z";
 
 const BRANCHES =
-  "M37.7 21.0 A24 24 0 0 1 79.4 15.9 M67.4 7.2 C71.1 -4.2 75.6 -6.8 84.6 -1.5 M84.6 -1.5 A40 40 0 0 1 97.6 16.3 M47.3 9.6 C40.9 -0.5 35.9 -1.9 28.5 5.4 M28.5 5.4 A40 40 0 0 0 21.5 19.0";
+  "M48.7 8.8 A24 24 0 0 1 80.8 18.0 M66.6 6.9 C69.4 1.1 78.8 -5.3 85.7 -0.6 M85.7 -0.6 A40 40 0 0 1 98.8 20.3";
 const NODES: [number, number][] = [
-  [37.7, 21],
-  [57.1, 6.2],
-  [79.4, 15.9],
-  [97.6, 16.3],
-  [21.5, 19],
+  [48.7, 8.8],
+  [66.6, 6.9],
+  [80.8, 18],
+  [85.7, -0.6],
+  [98.8, 20.3],
 ];
 
 /** Small glyph for the title bar and empty states: the whale alone, swimming right. */
