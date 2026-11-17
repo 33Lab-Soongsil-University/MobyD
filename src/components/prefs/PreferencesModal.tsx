@@ -91,7 +91,7 @@ function UpdateRow() {
               ? t("다시 시작하는 중…")
               : phase === "error"
                 ? t("업데이트를 확인하지 못했습니다: {error}", { error: error ?? "" })
-                : t("시작할 때와 몇 시간마다 자동으로 확인합니다.");
+                : t("시작할 때와 한 시간마다 자동으로 확인합니다.");
   return (
     <div className="field">
       <span>{t("업데이트")}</span>

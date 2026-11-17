@@ -4,6 +4,8 @@
 import { create } from "zustand";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { errorText } from "./api";
+import { useUi } from "../store";
+import { t } from "./i18n";
 
 export type UpdatePhase = "idle" | "checking" | "current" | "available" | "downloading" | "installed" | "error";
 
@@ -25,6 +27,20 @@ const inApp = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in wi
 export const canUpdate = inApp;
 
 let pending: Update | null = null;
+/** Versions already announced in this run: the top-bar button stays, the notice shows once. */
+const announced = new Set<string>();
+
+function announce(version: string) {
+  if (announced.has(version)) return;
+  announced.add(version);
+  useUi.getState().pushToast({
+    kind: "info",
+    title: t("MobyD {version}이(가) 나왔습니다", { version }),
+    detail: t("업데이트하면 내려받아 설치한 뒤 다시 시작합니다."),
+    sticky: true,
+    action: { label: t("지금 업데이트"), run: () => void import("../components/UpdateButton").then((m) => m.offerUpdate()) },
+  });
+}
 
 /** Look for a newer release. `quiet` keeps a failed background check out of the way. */
 export async function checkForUpdate(quiet = false): Promise<void> {
@@ -41,6 +57,7 @@ export async function checkForUpdate(quiet = false): Promise<void> {
         ? { phase: "available", version: found.version, notes: found.body?.trim() || null, error: null, checkedAt: Date.now() }
         : { phase: "current", version: null, notes: null, error: null, checkedAt: Date.now() },
     );
+    if (found) announce(found.version);
   } catch (e) {
     // offline, or the feed is briefly unavailable: a background check just tries again later
     if (quiet) return;
@@ -71,15 +88,21 @@ export async function installUpdate(): Promise<void> {
 }
 
 const FIRST_CHECK_MS = 8_000;
-const RECHECK_MS = 6 * 60 * 60 * 1000;
+const RECHECK_MS = 60 * 60 * 1000;
 
-/** Check shortly after launch and then a few times a day. */
+/** Check shortly after launch, every hour, and when the window comes back after a long while. */
 export function startUpdateChecks(): () => void {
   if (!inApp() || import.meta.env.DEV) return () => {};
   const first = window.setTimeout(() => checkForUpdate(true), FIRST_CHECK_MS);
   const again = window.setInterval(() => checkForUpdate(true), RECHECK_MS);
+  const onFocus = () => {
+    const last = useUpdate.getState().checkedAt;
+    if (!last || Date.now() - last > RECHECK_MS) checkForUpdate(true);
+  };
+  window.addEventListener("focus", onFocus);
   return () => {
     window.clearTimeout(first);
     window.clearInterval(again);
+    window.removeEventListener("focus", onFocus);
   };
 }

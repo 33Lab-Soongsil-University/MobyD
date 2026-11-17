@@ -23,6 +23,17 @@ export function Toasts() {
             <strong>{t.title}</strong>
             {t.detail && <p className="toast-detail">{t.detail}</p>}
             <ErrorDetails text={t.detail} />
+            {t.action && (
+              <button
+                className="btn sm primary toast-action"
+                onClick={() => {
+                  dismiss(t.id);
+                  t.action!.run();
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
           </div>
           <button className="icon-btn" onClick={() => dismiss(t.id)} aria-label={tr("닫기")}>
             <X size={13} />

@@ -12,6 +12,10 @@ export interface Toast {
   detail?: string;
   /** Kept on screen while the pointer is over it. */
   held?: boolean;
+  /** A button on the toast; clicking it also closes the toast. */
+  action?: { label: string; run: () => void };
+  /** Stays until closed or acted on. */
+  sticky?: boolean;
 }
 
 export interface FieldOption {
@@ -129,6 +133,7 @@ export const useUi = create<UiState>((set, get) => ({
   pushToast: (t) => {
     const id = toastId++;
     set({ toasts: [...get().toasts, { ...t, id }].slice(-5) });
+    if (t.sticky) return;
     const ttl = t.kind === "error" ? 12000 : t.kind === "warning" ? 8000 : 4500;
     const expire = () => {
       if (get().toasts.find((x) => x.id === id)?.held) setTimeout(expire, 1500);

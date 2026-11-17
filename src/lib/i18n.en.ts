@@ -659,7 +659,10 @@ export const EN: Record<string, EnEntry> = {
   "확인하는 중…": "Checking…",
   "최신 버전을 쓰고 있습니다.": "You are on the latest version.",
   "업데이트를 확인하지 못했습니다: {error}": "Could not check for updates: {error}",
-  "시작할 때와 몇 시간마다 자동으로 확인합니다.": "Checked automatically at launch and every few hours.",
   "업데이트": "Updates",
   "업데이트 확인": "Check for updates",
+  "MobyD {version}이(가) 나왔습니다": "MobyD {version} is out",
+  "업데이트하면 내려받아 설치한 뒤 다시 시작합니다.": "Updating downloads and installs it, then restarts MobyD.",
+  "시작할 때와 한 시간마다 자동으로 확인합니다.": "Checked automatically at launch and every hour.",
+  "지금 업데이트": "Update now",
 };

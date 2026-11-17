@@ -3485,3 +3485,7 @@ select:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.toast-action {
+  margin-top: 8px;
+}

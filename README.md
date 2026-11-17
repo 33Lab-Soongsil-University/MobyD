@@ -26,7 +26,7 @@
 
 ## Why "MobyD"?
 
-GitKraken is named after the **Kraken**, the giant squid of sea legend. The giant squid has exactly one natural enemy: the **sperm whale**. The most famous sperm whale of all is **Moby Dick**, the white whale — hence **MobyD**. The logo is that whale seen from far below, hanging upright in the deep under rings of light from the surface, with a branch forking along the rings.
+GitKraken is named after the **Kraken**, the giant squid of sea legend. The giant squid has exactly one natural enemy: the **sperm whale**. The most famous sperm whale of all is **Moby Dick**, the white whale — hence **MobyD**. The logo is that whale seen from far below, hanging upright in the deep under rings of light from the surface, with commits riding the rings.
 
 MobyD started as an answer to the things we kept running into with GitKraken: it is heavy (a full Electron app), and it cannot work on a repository that lives on *another* computer. MobyD is a small native app (~7 MB) that treats a repository on your SSH-reachable PC the same as one on your laptop.
 
@@ -98,7 +98,7 @@ Pick a host from your `~/.ssh/config`, browse its folders, and open a repository
 
 Requires macOS on Apple silicon and Git 2.36+ (Xcode Command Line Tools or Homebrew). Past versions and release notes are on the [Releases](https://github.com/gyeongjin-kim/MobyD-releases/releases) page.
 
-MobyD updates itself: it checks for a new version at launch and every few hours, and an **Update** button in the top bar downloads, verifies and installs it, then restarts the app. Preferences → General has a manual check.
+MobyD updates itself: it checks for a new version at launch and every hour, shows a notice when one is out, and the **Update now** button (also in the top bar) downloads, verifies and installs it, then restarts the app. Preferences → General has a manual check.
 
 ## Tech stack
 
