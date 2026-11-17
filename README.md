@@ -90,7 +90,7 @@ Pick a host from your `~/.ssh/config`, browse its folders, and open a repository
 ## Install
 
 1. Download **[MobyD-macOS-arm64.dmg](https://github.com/gyeongjin-kim/MobyD-releases/releases/latest/download/MobyD-macOS-arm64.dmg)** (always the latest release) and drag MobyD into Applications.
-2. MobyD is not notarized yet, so the first launch is blocked by Gatekeeper. Right-click MobyD → **Open**, or run:
+2. MobyD is not notarized yet, so macOS blocks the first launch. Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to MobyD, or run:
 
    ```bash
    xattr -dr com.apple.quarantine /Applications/MobyD.app
