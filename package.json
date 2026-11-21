@@ -1,7 +1,7 @@
 {
   "name": "mobyd",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "MobyD — a white-whale Git client with a commit graph, worktrees and forge pull requests",
   "type": "module",
   "scripts": {
