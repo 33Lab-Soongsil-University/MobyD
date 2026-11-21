@@ -41,6 +41,8 @@ MobyD started as an answer to the things we kept running into with GitKraken: it
 - **GitHub, GitLab and Gitea / Forgejo** — sign in with the browser (GitHub) or a token, see every repository your account can reach and clone many at once; list, create, review and merge pull requests.
 - **Dark and light themes**, or follow the system. English and Korean UI.
 - **Updates itself** — one click installs a new version and restarts.
+- **Always know where you are** — the commit your folder has checked out is ringed and marked with an icon (hover it for the branch and folder), commits other worktrees have checked out get their own icon, and a button brings you back when you scroll away.
+- **Guided tour** — a step-by-step walk through the basics on first launch; take it again from the **?** in the top bar or ⌘K.
 - **Command palette** (⌘K), readable error messages instead of raw Git output, `mobyd://` links to open a repository from a web page.
 
 <table>

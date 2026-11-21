@@ -1,5 +1,6 @@
 import { UpdateButton } from "./UpdateButton";
-import { Plus, X, FolderGit2, GitFork, Server, Settings, UserRound, Search } from "lucide-react";
+import { Plus, X, FolderGit2, GitFork, Server, Settings, UserRound, Search, CircleHelp } from "lucide-react";
+import { startTour } from "./Tour";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
@@ -71,6 +72,9 @@ export function TopBar() {
           <Search size={13} />
           <span>{tr("명령 찾기")}</span>
           <kbd>⌘K</kbd>
+        </button>
+        <button className="icon-btn" title={tr("기본 기능 둘러보기")} aria-label={tr("기본 기능 둘러보기")} onClick={startTour}>
+          <CircleHelp size={16} />
         </button>
         <button className="icon-btn" title={tr("환경설정")} onClick={() => openPrefs("general")}>
           <Settings size={16} />

@@ -15,6 +15,7 @@ import { t } from "./lib/i18n";
 import { handleZoomKey } from "./lib/zoom";
 import { ZoomIndicator } from "./components/ZoomIndicator";
 import { CommandPalette } from "./components/CommandPalette";
+import { Tour } from "./components/Tour";
 import { startLinkHandling } from "./lib/deeplink";
 import { startUpdateChecks } from "./lib/updater";
 
@@ -111,6 +112,7 @@ export default function App() {
       <CommandPalette />
       <DialogHost />
       <ContextMenu />
+      <Tour />
       {modal === "prefs" && <PreferencesModal />}
     </div>
   );

@@ -10,6 +10,7 @@ import { resetZoom, zoomIn, zoomOut } from "../lib/zoom";
 import { openManager, openPrefs, useUi } from "../store";
 import { useEscape } from "../lib/escape";
 import type { RecentRepo } from "../lib/types";
+import { startTour } from "./Tour";
 
 export interface PaletteCommand {
   id: string;
@@ -43,6 +44,7 @@ function appCommands(recent: RecentRepo[]): PaletteCommand[] {
     { id: "clone", title: t("저장소 복제…"), group: g, words: "clone", run: () => openManager("clone") },
     { id: "init", title: t("새 저장소 만들기"), group: g, words: "init new repository", run: initRepoDialog },
     { id: "newtab", title: t("새 탭"), group: g, keys: "⌘T", words: "new tab", run: () => openManager("open") },
+    { id: "tour", title: t("기본 기능 둘러보기"), group: g, words: "tour tutorial help guide onboarding", run: startTour },
     { id: "prefs", title: t("환경설정"), group: g, keys: "⌘,", words: "preferences settings", run: () => openPrefs("general") },
     { id: "accounts", title: t("GitHub · GitLab · Gitea 계정 연결"), group: g, words: "integrations account login sign in", run: () => openPrefs("integrations") },
     { id: "ssh", title: t("SSH 원격 설정"), group: g, words: "ssh remote hosts", run: () => openPrefs("ssh") },

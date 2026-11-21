@@ -141,16 +141,16 @@ export function Toolbar() {
       </div>
 
       <div className="toolbar-group center-group">
-        <button className="tool" onClick={ctx.undo} disabled={!undo?.undo || !!ctx.busy} title={undo?.undo ? t("실행 취소: {undo} (⌘Z)", { undo: undo.undo }) : t("되돌릴 작업 없음")}>
+        <button className="tool" data-tour="undo" onClick={ctx.undo} disabled={!undo?.undo || !!ctx.busy} title={undo?.undo ? t("실행 취소: {undo} (⌘Z)", { undo: undo.undo }) : t("되돌릴 작업 없음")}>
           <Undo2 size={17} />
           <span>{t("실행 취소")}</span>
         </button>
-        <button className="tool" onClick={ctx.redo} disabled={!undo?.redo || !!ctx.busy} title={undo?.redo ? t("다시 실행: {redo} (⇧⌘Z)", { redo: undo.redo }) : t("다시 실행할 작업 없음")}>
+        <button className="tool" data-tour="undo" onClick={ctx.redo} disabled={!undo?.redo || !!ctx.busy} title={undo?.redo ? t("다시 실행: {redo} (⇧⌘Z)", { redo: undo.redo }) : t("다시 실행할 작업 없음")}>
           <Redo2 size={17} />
           <span>{t("다시 실행")}</span>
         </button>
         <span className="tool-sep" />
-        <div className="split-btn">
+        <div className="split-btn" data-tour="sync">
           <button className="tool" onClick={() => pullFlow(ctx)} disabled={!!ctx.busy} title={t("최신 변경 받기 (Pull)")}>
             <ArrowDownToLine size={17} />
             <span>Pull</span>
@@ -159,7 +159,7 @@ export function Toolbar() {
             <ChevronDown size={11} />
           </button>
         </div>
-        <div className="split-btn">
+        <div className="split-btn" data-tour="sync">
           <button className="tool" onClick={() => pushFlow(ctx)} disabled={!!ctx.busy} title={t("내 커밋 올리기 (Push)")}>
             <ArrowUpFromLine size={17} />
             <span>Push</span>
@@ -169,30 +169,31 @@ export function Toolbar() {
           </button>
         </div>
         <span className="tool-sep" />
-        <button className="tool" onClick={() => createBranchFlow(ctx)} title={t("새 브랜치 만들기")}>
+        <button className="tool" data-tour="tools" onClick={() => createBranchFlow(ctx)} title={t("새 브랜치 만들기")}>
           <GitBranchPlus size={17} />
           <span>{t("브랜치")}</span>
         </button>
         <span className="tool-sep" />
-        <button className="tool" onClick={() => stashFlow(ctx)} disabled={dirty === 0} title={dirty === 0 ? t("보관할 변경이 없습니다") : t("작업 중인 변경을 잠시 보관 (Stash)")}>
+        <button className="tool" data-tour="tools" onClick={() => stashFlow(ctx)} disabled={dirty === 0} title={dirty === 0 ? t("보관할 변경이 없습니다") : t("작업 중인 변경을 잠시 보관 (Stash)")}>
           <Archive size={17} />
           <span>Stash</span>
         </button>
-        <button className="tool" onClick={() => stashActionFlow(ctx, "pop", 0)} disabled={stashes.length === 0} title={stashes.length === 0 ? t("꺼낼 Stash가 없습니다") : t("마지막 Stash 꺼내기 (Pop)")}>
+        <button className="tool" data-tour="tools" onClick={() => stashActionFlow(ctx, "pop", 0)} disabled={stashes.length === 0} title={stashes.length === 0 ? t("꺼낼 Stash가 없습니다") : t("마지막 Stash 꺼내기 (Pop)")}>
           <ArchiveRestore size={17} />
           <span>Pop</span>
         </button>
         <span className="tool-sep" />
-        <button className="tool" onClick={() => addWorktreeFlow(ctx)} title={t("워크트리 추가")}>
+        <button className="tool" data-tour="tools" onClick={() => addWorktreeFlow(ctx)} title={t("워크트리 추가")}>
           <GitFork size={17} />
           <span>{t("워크트리")}</span>
         </button>
-        <button className="tool" onClick={() => createPrFlow(ctx)} title={t("풀 리퀘스트 만들기")}>
+        <button className="tool" data-tour="tools" onClick={() => createPrFlow(ctx)} title={t("풀 리퀘스트 만들기")}>
           <GitPullRequestCreate size={17} />
           <span>PR</span>
         </button>
         <button
           className="tool"
+          data-tour="tools"
           onClick={() => api.openTerminal(ctx.info.root).catch((e) => toast.error(t("터미널을 열 수 없습니다"), errorText(e)))}
           title={ctx.info.host ? t("{host}에 ssh로 접속한 터미널", { host: ctx.info.host }) : t("이 폴더에서 터미널 열기")}
         >

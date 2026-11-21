@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Archive, Cloud, GitBranch, CircleDot, Tag, PencilLine, Plus, Minus, TriangleAlert } from "lucide-react";
-import type { Commit, GraphRow, RefInfo } from "../lib/types";
+import { Archive, Cloud, GitBranch, CircleDot, Tag, PencilLine, Plus, Minus, TriangleAlert, GitFork, Laptop, Server, Crosshair, ArrowUp, ArrowDown } from "lucide-react";
+import type { Commit, GraphRow, HeadInfo, RefInfo, Worktree } from "../lib/types";
 import { ROW_HEIGHT, graphWidth, groupRefs, initials, laneColor, laneX, matchesFilter, segmentPath, type RefGroup } from "../lib/graph";
 import { relativeTime, absoluteTime } from "../lib/format";
 import { useRepo } from "../repo/RepoContext";
@@ -17,6 +17,10 @@ interface RowProps {
   gw: number;
   selected: boolean;
   isHead: boolean;
+  /** Set on the commit this folder has checked out. */
+  here: HereInfo | null;
+  /** Other worktrees of this repository that have this commit checked out. */
+  otherWorktrees: Worktree[] | undefined;
   dim: boolean;
   refs: RefInfo[] | undefined;
   wipCounts: { staged: number; unstaged: number; conflicted: number } | null;
@@ -52,7 +56,12 @@ function GraphCell({ commit, row, gw, isHead }: { commit: Commit; row: GraphRow;
           </text>
         </g>
       )}
-      {isHead && <circle cx={cx} cy={cy} r={isMerge ? 7.5 : 11.2} fill="none" style={{ stroke: "var(--text)" }} strokeWidth={1.6} />}
+      {isHead && (
+        <g className="head-ring">
+          <circle cx={cx} cy={cy} r={isMerge ? 9 : 12.6} fill="none" style={{ stroke: color }} strokeWidth={4} opacity={0.28} />
+          <circle cx={cx} cy={cy} r={isMerge ? 7.5 : 11.2} fill="none" style={{ stroke: "var(--text)" }} strokeWidth={1.8} />
+        </g>
+      )}
     </svg>
   );
 }
@@ -86,13 +95,51 @@ function RefPill({ g, color, onContext, onOpen }: { g: RefGroup; color: string; 
   );
 }
 
+
+export interface HereInfo {
+  head: HeadInfo;
+  host: string | null;
+  root: string;
+}
+
+/** "Checked out here": an icon on the commit the working folder is on; the tooltip says the rest. */
+function HereMark({ here }: { here: HereInfo }) {
+  const label = here.host ? t("{host}에 체크아웃됨", { host: here.host }) : t("이 PC에 체크아웃됨");
+  const where = here.host ? t("{host}의 작업 폴더", { host: here.host }) : t("이 컴퓨터의 작업 폴더");
+  const detail = here.head.detached
+    ? t("{where}가 지금 이 커밋에 직접 체크아웃되어 있습니다(브랜치 없음, detached HEAD).\n여기서 커밋하면 어느 브랜치에도 속하지 않으니, 계속 작업하려면 새 브랜치를 만드세요.", { where })
+    : t("{where}가 지금 이 커밋에 체크아웃되어 있습니다.\n브랜치: {branch} · 파일들이 이 커밋 상태(와 작업 중인 변경)입니다.", { where, branch: here.head.branch ?? "" });
+  return (
+    <span className={"row-mark here" + (here.head.detached ? " detached" : "")} title={`${label}\n${detail}`} aria-label={label} data-tour="here">
+      {here.host ? <Server size={12} /> : <Laptop size={12} />}
+    </span>
+  );
+}
+
+function WorktreeMarks({ list }: { list: Worktree[] }) {
+  return (
+    <>
+      {list.map((w) => (
+        <span
+          key={w.path}
+          className="row-mark wt"
+          aria-label={t("다른 워크트리")}
+          title={t("다른 워크트리({branch})가 이 커밋에 체크아웃되어 있습니다.\n{path}", { branch: w.branch ?? t("브랜치 없음"), path: w.path })}
+        >
+          <GitFork size={12} />
+        </span>
+      ))}
+    </>
+  );
+}
+
 const Row = memo(function Row(p: RowProps) {
   const { commit: c } = p;
   const color = laneColor(p.row.color);
   const groups = p.refs ? groupRefs(p.refs) : [];
   return (
     <div
-      className={"g-row" + (p.selected ? " selected" : "") + (p.dim ? " dim" : "") + (c.kind ? ` k-${c.kind}` : "")}
+      className={"g-row" + (p.selected ? " selected" : "") + (p.here ? " is-head" : "") + (p.dim ? " dim" : "") + (c.kind ? ` k-${c.kind}` : "")}
       style={{ ["--lane" as string]: color }}
       onMouseDown={() => p.onSelect(c.hash)}
       onContextMenu={(e) => p.onContext(e, c)}
@@ -155,7 +202,11 @@ const Row = memo(function Row(p: RowProps) {
             <Archive size={12} /> {c.subject}
           </span>
         ) : (
-          c.subject
+          <>
+            {p.here && <HereMark here={p.here} />}
+            {p.otherWorktrees && <WorktreeMarks list={p.otherWorktrees} />}
+            {c.subject}
+          </>
         )}
       </div>
       <div className="c-author">{c.kind ? "" : c.authorName}</div>
@@ -252,6 +303,16 @@ export function GraphView() {
     },
     [matches, matchCursor, commits, ctx, virt],
   );
+  // The tour points at the checked-out commit: make sure its row is rendered.
+  useEffect(() => {
+    const on = () => {
+      const h = ctx.data?.head.commit;
+      const i = h ? ctx.rowIndex.get(h) : undefined;
+      if (i !== undefined) virt.scrollToIndex(i, { align: "center" });
+    };
+    window.addEventListener("mobyd-reveal-head", on);
+    return () => window.removeEventListener("mobyd-reveal-head", on);
+  }, [ctx.data, ctx.rowIndex, virt]);
   useEffect(() => {
     const on = (e: Event) => {
       const d = (e as CustomEvent<{ root: string; dir: 1 | -1 }>).detail;
@@ -287,7 +348,36 @@ export function GraphView() {
     ? { staged: status.staged.length, unstaged: status.unstaged.length, conflicted: status.conflicted.length }
     : null;
   const headCommit = data?.head.commit;
-  const hasWip = commits[0]?.kind === "wip";
+  const here = useMemo<HereInfo | null>(
+    () => (data ? { head: data.head, host: ctx.info.host ?? null, root: ctx.info.root } : null),
+    [data?.head, ctx.info.host, ctx.info.root], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  // Commits that another worktree of this repository has checked out.
+  const worktreeIndex = useMemo(() => {
+    const m = new Map<string, Worktree[]>();
+    for (const w of ctx.worktrees) {
+      if (w.isCurrent || !w.head || w.bare) continue;
+      m.set(w.head, [...(m.get(w.head) ?? []), w]);
+    }
+    return m;
+  }, [ctx.worktrees]);
+  const headIndex = headCommit ? ctx.rowIndex.get(headCommit) : undefined;
+  // When the checked-out commit has scrolled away, offer a way back to it.
+  const viewTop = virt.scrollOffset ?? 0;
+  const viewHeight = virt.scrollRect?.height ?? 0;
+  const headAway =
+    headIndex === undefined || viewHeight === 0
+      ? null
+      : (headIndex + 1) * ROW_HEIGHT <= viewTop + 4
+        ? "up"
+        : headIndex * ROW_HEIGHT >= viewTop + viewHeight - 4
+          ? "down"
+          : null;
+  const jumpToHead = () => {
+    if (headIndex === undefined || !headCommit) return;
+    ctx.select(headCommit);
+    virt.scrollToIndex(headIndex, { align: "center" });
+  };
   const matchSet = useMemo(() => new Set(matches), [matches]);
 
   if (ctx.loading && !data) {
@@ -337,7 +427,9 @@ export function GraphView() {
                   row={rows[v.index]}
                   gw={gw}
                   selected={ctx.selected === c.hash}
-                  isHead={c.hash === headCommit && !hasWip}
+                  isHead={!c.kind && c.hash === headCommit}
+                  here={!c.kind && c.hash === headCommit ? here : null}
+                  otherWorktrees={c.kind ? undefined : worktreeIndex.get(c.hash)}
                   dim={!!ctx.filter && !c.kind && !matchSet.has(v.index)}
                   refs={ctx.refIndex.get(c.hash)}
                   wipCounts={c.kind === "wip" ? wipCounts : null}
@@ -352,6 +444,17 @@ export function GraphView() {
           })}
         </div>
       </div>
+      {headAway && (
+        <button
+          className={"jump-head " + headAway}
+          onClick={jumpToHead}
+          aria-label={t("체크아웃된 커밋으로 이동")}
+          title={t("체크아웃된 커밋으로 이동") + (data?.head.branch ? ` (${data.head.branch})` : "")}
+        >
+          {headAway === "up" ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+          <Crosshair size={14} />
+        </button>
+      )}
     </div>
   );
 }

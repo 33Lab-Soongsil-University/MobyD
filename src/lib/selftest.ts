@@ -74,6 +74,12 @@ export async function runSelftestIfRequested() {
     return;
   }
   if (!cfg) return;
+  // The self-test drives the window itself: keep the first-run tour out of the way.
+  try {
+    localStorage.setItem("mobyd.tour.v1", "1");
+  } catch {
+    /* ignore */
+  }
   if (cfg.stress) {
     await reloadStress(cfg.repo, cfg.stress);
     return;
