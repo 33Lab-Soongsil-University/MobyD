@@ -3,6 +3,7 @@ import { FolderSearch } from "lucide-react";
 import { useUi, type DialogField, type DialogValues } from "../store";
 import { pickDirectory } from "../lib/actions";
 import { useEscape } from "../lib/escape";
+import { Hint } from "./Hint";
 import { t } from "../lib/i18n";
 
 function initial(fields: DialogField[] = []): DialogValues {
@@ -84,14 +85,19 @@ export function DialogHost() {
             return (
               <label key={f.name} className="check">
                 <input type="checkbox" checked={Boolean(values[f.name])} onChange={(e) => set(e.target.checked)} />
-                <span>{f.label}</span>
-                {f.hint && <small className="muted">{f.hint}</small>}
+                <span>
+                  {f.label}
+                  {f.hint && <Hint text={f.hint} />}
+                </span>
               </label>
             );
           }
           return (
             <label key={f.name} className="field">
-              <span>{f.label}</span>
+              <span>
+                {f.label}
+                {f.hint && <Hint text={f.hint} />}
+              </span>
               {f.type === "select" ? (
                 <select value={String(values[f.name] ?? "")} onChange={(e) => set(e.target.value)}>
                   {f.options?.map((o) => (
@@ -135,7 +141,6 @@ export function DialogHost() {
                   )}
                 </div>
               )}
-              {f.hint && <small className="muted">{f.hint}</small>}
             </label>
           );
         })}

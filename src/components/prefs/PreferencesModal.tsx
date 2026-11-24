@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { ZoomIn, ZoomOut, X, Settings2, Palette, PlugZap, Server, Monitor, Moon, Sun, FolderSearch, Loader2, CheckCircle2, XCircle, SlidersHorizontal, AlertTriangle, KeyRound } from "lucide-react";
+import { ZoomIn, ZoomOut, X, Settings2, Palette, PlugZap, Server, Monitor, Moon, Sun, FolderSearch, Loader2, CheckCircle2, XCircle, SlidersHorizontal, AlertTriangle, KeyRound, ChevronDown } from "lucide-react";
 import { api, errorText } from "../../lib/api";
 import { SshKeyList } from "../SshKeys";
+import { Hint } from "../Hint";
 import type { AppInfo, HostPrefs, ShellPref, SshHost, TailscalePeer } from "../../lib/types";
 import { applyTheme, getThemePref, type ThemePref } from "../../lib/theme";
 import { getCloneDir, pickDirectory, setCloneDir } from "../../lib/actions";
@@ -32,7 +33,9 @@ function General() {
   return (
     <div className="prefs-pane">
       <label className="field">
-        <span>{t("기본 복제 위치")}</span>
+        <span>
+          {t("기본 복제 위치")} <Hint text={t("통합 계정의 저장소를 한 번에 복제할 때 이 폴더 아래에 만듭니다.")} />
+        </span>
         <div className="input-row">
           <input className="mono" value={dir} placeholder={t("처음 복제할 때 묻습니다")} onChange={(e) => {
             setDir(e.target.value);
@@ -48,7 +51,6 @@ function General() {
             <FolderSearch size={14} />
           </button>
         </div>
-        <small className="muted">{t("통합 계정의 저장소를 한 번에 복제할 때 이 폴더 아래에 만듭니다.")}</small>
       </label>
       <div className="field">
         <span>{t("언어")}</span>
@@ -59,7 +61,6 @@ function General() {
             </button>
           ))}
         </div>
-        <small className="muted">{t("바꾸면 화면을 다시 불러옵니다. 열린 탭은 그대로 유지됩니다.")}</small>
       </div>
       <div className="kv">
         <span>Git</span>
@@ -127,10 +128,9 @@ function Appearance() {
     <div className="prefs-pane">
       <div className="theme-cards">
         {options.map((o) => (
-          <button key={o.id} className={"theme-card" + (pref === o.id ? " on" : "")} onClick={() => choose(o.id)}>
+          <button key={o.id} className={"theme-card" + (pref === o.id ? " on" : "")} onClick={() => choose(o.id)} title={o.hint}>
             <span className={`theme-swatch ${o.id}`}>{o.icon}</span>
             <strong>{o.label}</strong>
-            <small className="muted">{o.hint}</small>
           </button>
         ))}
       </div>
@@ -161,7 +161,6 @@ function ZoomControl() {
           {t("기본 크기")}
         </button>
       </div>
-      <small className="muted">{t("어디서든 ⌘+ 로 키우고 ⌘− 로 줄이며, ⌘0 으로 기본 크기로 돌아갑니다.")}</small>
     </div>
   );
 }
@@ -201,7 +200,6 @@ function HostSettings({
   const [shell, setShell] = useState<ShellPref>(prefs.shell);
   const [address, setAddress] = useState(prefs.address ?? "");
   const [shareTokens, setShareTokens] = useState(prefs.shareTokens ?? false);
-  const [showKeys, setShowKeys] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const dirty =
@@ -220,7 +218,9 @@ function HostSettings({
   return (
     <div className="ssh-host-prefs">
       <div className="field">
-        <span>{t("명령 실행 방식")}</span>
+        <span>
+          {t("명령 실행 방식")} <Hint text={t("호스트의 기본 셸 설정은 바꾸지 않습니다.")} />
+        </span>
         <div className="seg wide">
           {SHELL_OPTIONS.map((o) => (
             <button key={o.id} className={shell === o.id ? "on" : ""} onClick={() => setShell(o.id)} title={o.hint}>
@@ -228,10 +228,16 @@ function HostSettings({
             </button>
           ))}
         </div>
-        <small className="muted">{SHELL_OPTIONS.find((o) => o.id === shell)?.hint}{" "}{t("호스트의 기본 셸 설정은 바꾸지 않습니다.")}</small>
       </div>
       <label className="field">
-        <span>{t("MobyD 전용 주소")}</span>
+        <span>
+          {t("MobyD 전용 주소")}{" "}
+          <Hint
+            text={tj("비워 두면 {config}의 주소를 씁니다. 값을 넣으면 MobyD만 이 주소로 접속하고, 사용자·키·포트는 config 설정을 그대로 씁니다.", {
+              config: <code>~/.ssh/config</code>,
+            })}
+          />
+        </span>
         <div className="input-row">
           <input
             className="mono"
@@ -256,10 +262,6 @@ function HostSettings({
             </select>
           )}
         </div>
-        <small className="muted">{tj("비워 두면 {config}의 주소를 씁니다. 값을 넣으면 MobyD만 이 주소로 접속하고, 사용자·키·포트는 config 설정을 그대로 씁니다.", {
-            config: <code>~/.ssh/config</code>,
-          })}
-        </small>
       </label>
       <div className="field">
         <label className="check">
@@ -270,13 +272,6 @@ function HostSettings({
           <AlertTriangle size={12} /> {t("혼자 쓰는 PC에만 켜세요. 실행 중에는 그 PC 관리자가 토큰을 볼 수 있습니다.")}
         </small>
       </div>
-      {showKeys ? (
-        <SshKeyList host={host.alias} />
-      ) : (
-        <button className="btn sm key-toggle" onClick={() => setShowKeys(true)}>
-          <KeyRound size={12} /> {t("이 호스트의 SSH 키 보기")}
-        </button>
-      )}
       {err && <ErrorBox text={err} />}
       <div className="dialog-actions">
         <button
@@ -327,14 +322,15 @@ function SshPane() {
   };
   return (
     <div className="prefs-pane">
-      <p className="muted tiny">
-        {tj(
-          "{config}의 호스트를 그대로 씁니다(키·에이전트·포트·점프 호스트 포함). MobyD는 호스트마다 연결 하나를 유지해 재사용하고 (ControlMaster), 새로고침에 필요한 git 명령을 원격에서 한 번에 묶어 실행합니다. 비밀번호 인증은 지원하지 않으니 키 인증을 설정하세요. Windows 호스트는 기본 셸이 cmd·PowerShell·Git Bash 무엇이든 Git for Windows만 있으면 됩니다.",
-          { config: <code>~/.ssh/config</code> },
-        )}
-      </p>
-      <div className="mac-keys">
-        <SshKeyList host={null} />
+      <div className="pane-head">
+        <span>
+          {tj("{config}의 호스트", { config: <code>~/.ssh/config</code> })}{" "}
+          <Hint
+            text={t(
+              "키·에이전트·포트·점프 호스트 설정을 그대로 씁니다. 비밀번호 인증은 지원하지 않습니다. Windows 호스트는 Git for Windows만 있으면 됩니다.",
+            )}
+          />
+        </span>
       </div>
       <div className="account-list">
         {hosts.length === 0 && <p className="muted">{t("~/.ssh/config에 Host 항목이 없습니다.")}</p>}
@@ -386,7 +382,38 @@ function SshPane() {
           );
         })}
       </div>
+      <KeysSection hosts={hosts} />
     </div>
+  );
+}
+
+/** SSH key lists, collapsed at the bottom of the SSH pane: this Mac's or one host's ~/.ssh. */
+function KeysSection({ hosts }: { hosts: SshHost[] }) {
+  const [open, setOpen] = useState(false);
+  const [who, setWho] = useState("");
+  return (
+    <details className="keys-section" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        <KeyRound size={14} /> {t("SSH 키")}
+        <ChevronDown size={14} className="chev muted" />
+      </summary>
+      {open && (
+        <SshKeyList
+          key={who}
+          host={who || null}
+          head={
+            <select value={who} onChange={(e) => setWho(e.target.value)} aria-label={t("키를 볼 PC")}>
+              <option value="">{t("이 Mac").replace(/^./, (c) => c.toUpperCase())}</option>
+              {hosts.map((h) => (
+                <option key={h.alias} value={h.alias}>
+                  {h.alias}
+                </option>
+              ))}
+            </select>
+          }
+        />
+      )}
+    </details>
   );
 }
 

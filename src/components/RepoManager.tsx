@@ -84,15 +84,13 @@ function OpenPane() {
   return (
     <div className="manager-pane">
       <div className="choice-row">
-        <button className="choice" onClick={openRepoDialog}>
+        <button className="choice" onClick={openRepoDialog} title={t("로컬 폴더의 Git 저장소 (⌘O)")}>
           <FolderOpen size={22} />
           <strong>{t("이 컴퓨터에서 열기")}</strong>
-          <small className="muted">{t("로컬 폴더의 Git 저장소 (⌘O)")}</small>
         </button>
-        <button className={"choice" + (ssh ? " on" : "")} onClick={() => setSsh(!ssh)}>
+        <button className={"choice" + (ssh ? " on" : "")} onClick={() => setSsh(!ssh)} title={t("~/.ssh/config의 호스트에서 폴더를 골라 로컬처럼 사용")}>
           <Server size={22} />
           <strong>{t("SSH로 연결된 PC에서 열기")}</strong>
-          <small className="muted">{t("~/.ssh/config의 호스트에서 폴더를 골라 로컬처럼 사용")}</small>
         </button>
       </div>
       {ssh && (
@@ -567,15 +565,13 @@ function InitPane() {
   return (
     <div className="manager-pane">
       <div className="choice-row">
-        <button className="choice" onClick={initRepoDialog}>
+        <button className="choice" onClick={initRepoDialog} title={t("폴더를 골라 git init -b main")}>
           <FolderPlus size={22} />
           <strong>{t("이 컴퓨터에 새 저장소")}</strong>
-          <small className="muted">{t("폴더를 골라 git init -b main")}</small>
         </button>
-        <button className={"choice" + (ssh ? " on" : "")} onClick={() => setSsh(!ssh)}>
+        <button className={"choice" + (ssh ? " on" : "")} onClick={() => setSsh(!ssh)} title={t("원격 폴더 안에 새 저장소를 만들고 바로 엽니다")}>
           <Server size={22} />
           <strong>{t("SSH 원격 PC에 새 저장소")}</strong>
-          <small className="muted">{t("원격 폴더 안에 새 저장소를 만들고 바로 엽니다")}</small>
         </button>
       </div>
       {ssh && (

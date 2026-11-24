@@ -17,6 +17,7 @@ import { confirmAction, openMenu } from "../store";
 import { FILE_ROW_HEIGHT, FileRow } from "./FileList";
 import { WindowedRows } from "./WindowedRows";
 import { t } from "../lib/i18n";
+import { Hint } from "./Hint";
 
 function draftKey(path: string) {
   return `mobyd.draft.${path}`;
@@ -203,8 +204,8 @@ export function WipPanel() {
         <div className="stage-box conflict">
           <div className="stage-head">
             <TriangleAlert size={13} /> {t("충돌")} <b>{conflicted.length}</b>
+            <Hint text={t("파일마다 어느 쪽을 쓸지 고르거나, 직접 고친 뒤 ✓를 눌러 해결로 표시하세요.")} />
           </div>
-          <p className="conflict-help">{t("파일마다 어느 쪽을 쓸지 고르거나, 직접 고친 뒤 ✓를 눌러 해결로 표시하세요.")}</p>
           <div className="files">
             <WindowedRows items={conflicted} rowHeight={FILE_ROW_HEIGHT} render={(f) => (
               <FileRow
@@ -454,19 +455,20 @@ export function WipPanel() {
               ? t("파일 {length}개 커밋", { length: staged.length })
               : t("커밋")}
         </button>
-        <p className="commit-hint">
-          {canCommit
-            ? t("⌘↵를 눌러도 커밋됩니다.")
-            : clean && !amend
+        {!canCommit && (
+          <p className="commit-hint">
+            {clean && !amend
               ? t("커밋할 변경이 없습니다.")
               : conflicted.length > 0
                 ? t("충돌을 먼저 해결하세요.")
                 : !effectiveSummary
-                  ? t("커밋 요약을 입력하면 커밋할 수 있습니다.")
-                  : t(
-                      "커밋할 파일을 스테이징하세요. 파일을 더블클릭하면 스테이징됩니다.",
-                    )}
-        </p>
+                  ? t("커밋 요약을 입력하세요.")
+                  : t("커밋할 파일을 스테이징하세요.")}
+            {!clean && !amend && conflicted.length === 0 && effectiveSummary && (
+              <Hint text={t("파일을 더블클릭하면 스테이징됩니다.")} />
+            )}
+          </p>
+        )}
         {!amend && staged.length === 0 && unstaged.length > 0 && conflicted.length === 0 && (
           <button
             type="button"

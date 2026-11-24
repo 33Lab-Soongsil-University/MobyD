@@ -1,7 +1,7 @@
 // SSH key views: public keys in ~/.ssh on this Mac or an SSH host, the
 // account's own keys on its service, and a repository's deploy keys. Keys are
 // matched by their public part, so each list says where else a key is used.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Copy, KeyRound, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { api, errorText } from "../lib/api";
 import { copyText } from "../lib/actions";
@@ -45,8 +45,8 @@ function shortFp(fp: string) {
   return fp.length > 24 ? `${fp.slice(0, 19)}…${fp.slice(-4)}` : fp;
 }
 
-/** Public keys in ~/.ssh on this Mac (`host` null) or on an SSH host. */
-export function SshKeyList({ host }: { host: string | null }) {
+/** Public keys in ~/.ssh on this Mac (`host` null) or on an SSH host. `head` replaces the title. */
+export function SshKeyList({ host, head }: { host: string | null; head?: ReactNode }) {
   const [keys, setKeys] = useState<SshKey[] | null>(null);
   const [owners, setOwners] = useState<Map<string, string>>(new Map());
   const [err, setErr] = useState<string | null>(null);
@@ -67,7 +67,7 @@ export function SshKeyList({ host }: { host: string | null }) {
   return (
     <div className="key-block">
       <div className="key-head">
-        <span>{host ? t("이 호스트의 SSH 키") : t("이 Mac의 SSH 키")}</span>
+        {head ?? <span>{host ? t("이 호스트의 SSH 키") : t("이 Mac의 SSH 키")}</span>}
         <button className="icon-btn" title={t("새로 고침")} onClick={() => setSeq((n) => n + 1)}>
           <RefreshCw size={12} />
         </button>

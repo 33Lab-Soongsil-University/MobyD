@@ -8,6 +8,7 @@ import { t } from "../lib/i18n";
 import { useEscape } from "../lib/escape";
 import { useUi } from "../store";
 import { tj } from "../lib/i18n-react";
+import { Hint } from "./Hint";
 
 interface Row {
   commit: Commit;
@@ -101,16 +102,17 @@ export function RebaseModal() {
         <div className="dialog-title-row">
           <h3>
             <Workflow size={16} />{" "}{t("인터랙티브 리베이스 ·")}{" "}{branch ?? "HEAD"} → {base.label}
+            <Hint
+              text={tj(
+                "위가 최신 커밋입니다. 끌어서 순서를 바꾸고 커밋마다 동작을 고르세요. Squash/Fixup은 바로 아래 커밋에 합쳐집니다. 커밋하지 않은 변경은 자동으로 보관했다가 되돌려 놓습니다(--autostash). 끝난 뒤 툴바의 {undo}로 원래대로 돌릴 수 있습니다.",
+                { undo: <b>{t("실행 취소")}</b> },
+              )}
+            />
           </h3>
           <button className="icon-btn" onClick={close} disabled={busy}>
             <X size={16} />
           </button>
         </div>
-        <p className="muted tiny">{tj(
-            "위가 최신 커밋입니다. 끌어서 순서를 바꾸고 커밋마다 동작을 고르세요. Squash/Fixup은 바로 아래 커밋에 합쳐집니다. 커밋하지 않은 변경은 자동으로 보관했다가 되돌려 놓습니다(--autostash). 끝난 뒤 툴바의 {undo}로 원래대로 돌릴 수 있습니다.",
-            { undo: <b>{t("실행 취소")}</b> },
-          )}
-        </p>
         {err && (
           <p className="warn-box">
             <TriangleAlert size={14} /> {err}

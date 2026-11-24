@@ -3382,10 +3382,6 @@ kbd {
   user-select: none;
 }
 
-/* the hint sits in reserved space so the fields above it never jump */
-.commit-box .commit-hint {
-  min-height: 2.8em;
-}
 /* toasts sit bottom-centre so they never cover the commit box (bottom right)
    or the sidebar (bottom left) */
 .toasts {
@@ -3501,13 +3497,6 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-.conflict-help {
-  margin: 0;
-  padding: 0 14px 6px;
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: var(--text-2);
-}
 
 /* update on offer: the one accent-coloured thing in the top bar */
 .update-btn {
@@ -3697,12 +3686,84 @@ select:focus-visible {
   flex: 1;
   min-width: 0;
 }
-.mac-keys {
-  padding: 10px 12px;
+.keys-section {
+  margin-top: 12px;
   border: 1px solid var(--border);
   border-radius: 9px;
-  margin-bottom: 10px;
+}
+.keys-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  list-style: none;
+  user-select: none;
+}
+.keys-section > summary::-webkit-details-marker {
+  display: none;
+}
+.keys-section > summary .chev {
+  margin-left: auto;
+  transition: transform 0.15s;
+}
+.keys-section[open] > summary .chev {
+  transform: rotate(180deg);
+}
+.keys-section > .key-block {
+  padding: 0 12px 10px;
+}
+.key-head select {
+  font-weight: 600;
+}
+
+/* (i) hint: explanation on hover/focus instead of always-on text */
+.hint {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 4px;
+  color: var(--muted);
+  cursor: help;
+  border-radius: 50%;
+}
+.hint:hover,
+.hint:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+.hint-bubble {
+  position: fixed;
+  z-index: 10000;
+  max-width: 300px;
+  transform: translate(-50%, calc(-100% - 6px));
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  white-space: normal;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+.hint-bubble.below {
+  transform: translate(-50%, 6px);
 }
 .account-keys {
   padding: 4px 12px 10px 48px;
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+.stage-head .hint {
+  margin-left: auto;
 }

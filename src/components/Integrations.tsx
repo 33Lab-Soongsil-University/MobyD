@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { Hint } from "./Hint";
 import { api, errorText } from "../lib/api";
 import type { Account, DeviceStart, ForgeKind } from "../lib/types";
 import { confirmAction, toast, useUi } from "../store";
@@ -325,18 +326,33 @@ export function ConnectService({
           <ForgeIcon kind={service.kind} size={34} />
         </span>
         <div>
-          <h3>{t("{service}에 연결", { service: service.label })}</h3>
-          <p className="muted tiny">
-            {t(
-              "연결하면 이 계정으로 접근할 수 있는 모든 저장소를 목록에서 골라 바로 복제하고, PR을 보고 병합할 수 있습니다. HTTPS 원격의 fetch·pull·push에도 이 계정이 쓰입니다.",
-            )}
-          </p>
+          <h3>
+            {t("{service}에 연결", { service: service.label })}{" "}
+            <Hint
+              text={t(
+                "연결하면 이 계정으로 접근할 수 있는 모든 저장소를 목록에서 골라 바로 복제하고, PR을 보고 병합할 수 있습니다. HTTPS 원격의 fetch·pull·push에도 이 계정이 쓰입니다.",
+              )}
+            />
+          </h3>
         </div>
       </div>
 
       {!service.base && (
         <label className="field">
-          <span>{t("서버 주소")}</span>
+          <span>
+            {t("서버 주소")}{" "}
+            <Hint
+              text={
+                service.kind === "github"
+                  ? t("GitHub Enterprise Server 주소 (API는 /api/v3).")
+                  : service.kind === "gitlab"
+                    ? t("자체 운영 GitLab 주소 (API는 /api/v4).")
+                    : t(
+                        "Gitea · Forgejo · Codeberg 주소 (API는 /api/v1). 로컬 서버면 http://localhost:3000 처럼 입력하세요.",
+                      )
+              }
+            />
+          </span>
           <input
             className="mono"
             value={base}
@@ -344,15 +360,6 @@ export function ConnectService({
             onChange={(e) => setBase(e.target.value)}
             spellCheck={false}
           />
-          <small className="muted">
-            {service.kind === "github"
-              ? t("GitHub Enterprise Server 주소 (API는 /api/v3).")
-              : service.kind === "gitlab"
-                ? t("자체 운영 GitLab 주소 (API는 /api/v4).")
-                : t(
-                    "Gitea · Forgejo · Codeberg 주소 (API는 /api/v1). 로컬 서버면 http://localhost:3000 처럼 입력하세요.",
-                  )}
-          </small>
         </label>
       )}
 
@@ -399,7 +406,10 @@ export function ConnectService({
       {!flow && (showToken || oauth === false) && (
         <div className="token-form">
           <label className="field">
-            <span>{t("개인 액세스 토큰")}</span>
+            <span>
+              {t("개인 액세스 토큰")}{" "}
+              <Hint text={t("토큰은 OS 키체인에 저장되고 화면으로는 다시 보내지 않습니다.")} />
+            </span>
             <div className="input-row">
               <input
                 type="password"
@@ -455,9 +465,6 @@ export function ConnectService({
           </div>
         </div>
       )}
-      <p className="muted tiny">
-        {t("토큰은 OS 키체인에 저장되고 화면으로는 다시 보내지 않습니다.")}
-      </p>
     </div>
   );
 }

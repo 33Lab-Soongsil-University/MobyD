@@ -40,7 +40,7 @@ export function FileHistory() {
             <X size={16} />
           </button>
         </div>
-        <p className="mono tiny muted">{path}{" "}{t("· 이름 변경 추적(--follow)")}</p>
+        <p className="mono tiny muted" title={t("이름 변경 추적(--follow)")}>{path}</p>
         {err && <ErrorBox text={err} />}
         {!commits && !err && <p className="muted">{t("불러오는 중…")}</p>}
         <div className="history-list">
