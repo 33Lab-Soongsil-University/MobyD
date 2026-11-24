@@ -146,3 +146,16 @@ scripts/set-version.sh 0.2.0 && git commit -am "Release 0.2.0" && git tag v0.2.0
 The [release workflow](.github/workflows/release.yml) builds the app on macOS and publishes it in two places: as a release of this repository, and in the public [MobyD-releases](https://github.com/gyeongjin-kim/MobyD-releases) repository, which serves the download link above and the update feed (`latest.json`) that running apps read.
 
 The update archive is signed with a key that only the workflow has (`TAURI_SIGNING_PRIVATE_KEY`); the app checks that signature with the public key in `src-tauri/tauri.conf.json` before installing anything. Keep a copy of the private key: an app can only accept updates signed with it.
+
+## License
+
+MobyD is licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in MobyD by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+
+The name "MobyD" and the MobyD logo are not covered by these licenses. If you ship a modified build, please give it a different name and icon.

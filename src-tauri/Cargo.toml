@@ -3,6 +3,7 @@ name = "mobyd"
 version = "0.1.6"
 description = "MobyD — a white-whale Git client"
 authors = ["MobyD contributors"]
+license = "MIT OR Apache-2.0"
 edition = "2021"
 rust-version = "1.80"
 

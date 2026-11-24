@@ -2,6 +2,7 @@
   "name": "mobyd",
   "private": true,
   "version": "0.1.6",
+  "license": "MIT OR Apache-2.0",
   "description": "MobyD — a white-whale Git client with a commit graph, worktrees and forge pull requests",
   "type": "module",
   "scripts": {
