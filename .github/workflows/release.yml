@@ -60,7 +60,13 @@ jobs:
           workspaces: src-tauri
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
       - run: pnpm test
+      - name: Rust lint and tests (git features run against real repositories)
+        run: |
+          mkdir -p dist && [ -f dist/index.html ] || echo '<!doctype html>' > dist/index.html
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build app, DMG and signed update archive
         env:
@@ -70,6 +76,9 @@ jobs:
           pnpm release
           test -s src-tauri/target/release/bundle/macos/MobyD.app.tar.gz
           test -s src-tauri/target/release/bundle/macos/MobyD.app.tar.gz.sig
+
+      - name: UI self-test on the built app (English and Korean)
+        run: scripts/selftest.sh src-tauri/target/release/bundle/macos/MobyD.app
 
       - name: Publish release
         env:

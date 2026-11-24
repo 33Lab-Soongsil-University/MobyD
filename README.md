@@ -130,8 +130,11 @@ pnpm release   # → src-tauri/target/release/bundle/{macos/MobyD.app, dmg/*.dmg
 Checks:
 
 ```bash
-pnpm typecheck && pnpm test && cargo test --manifest-path src-tauri/Cargo.toml
+pnpm check                 # typecheck, frontend tests, clippy, Rust tests
+pnpm release && pnpm selftest   # build the app, then drive its UI in English and Korean
 ```
+
+The Rust tests include feature tests (`src-tauri/src/feature_tests.rs`) that run every git feature through the same commands the UI calls, on throwaway repositories with a local server repository: staging, commits and amend, discard, branches, tags, merge, rebase, cherry-pick, revert, reset, conflicts, interactive rebase, stashes, worktrees, push, clone, fetch and pull, plus Undo/Redo after each kind of change and the account token sent to git. The self-test (`src/lib/selftest.ts`) opens a demo repository in the real app window and checks the graph, panels, rebase editor, layout, command palette, commit with undo/redo, themes and preferences. CI runs the frontend checks on every push; the release workflow (macOS) runs all of them, plus the self-test on the built app, before anything is published.
 
 More detail (shortcuts, the dev bridge for working on the UI in a browser, the self-test, architecture) is in [docs/guide.ko.md](docs/guide.ko.md) and [docs/architecture.md](docs/architecture.md) (Korean).
 

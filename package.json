@@ -14,7 +14,9 @@
     "tauri": "tauri",
     "release": "scripts/build-release.sh",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "rust:check": "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings"
+    "rust:check": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "selftest": "scripts/selftest.sh",
+    "check": "pnpm typecheck && pnpm test && pnpm rust:check && pnpm rust:test"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.26",
