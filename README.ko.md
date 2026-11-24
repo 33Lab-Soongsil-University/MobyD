@@ -154,7 +154,7 @@ Rust 테스트에는 기능 테스트(`src-tauri/src/feature_tests.rs`)가 있�
 git checkout main && git merge develop && git push origin main
 ```
 
-워크플로가 최신 `v*` 태그의 patch 번호를 올려(0.1.9 → 0.1.10) 푸시된 커밋 위에 `Release X.Y.Z`를 커밋하고 태그를 단 뒤, `develop`을 그 커밋으로 옮깁니다. 버전 커밋은 다음 병합 때 `main`에 들어갑니다. minor나 major 버전을 올리려면 병합 전에 `develop`에서 `scripts/set-version.sh 0.2.0`을 실행하세요. 최신 태그보다 높은 버전이 파일에 있으면 그대로 씁니다.
+워크플로가 최신 `v*` 태그의 patch 번호를 올려(0.1.11 → 0.1.12) 푸시된 `main` 커밋에 태그를 달고, 바로 그 커밋을 빌드합니다. 버전 번호는 빌드할 때만 앱에 써 넣고 저장소에 따로 커밋하지 않습니다. minor나 major 버전을 올리려면 병합 전에 `develop`에서 `scripts/set-version.sh 0.2.0`을 실행하세요. 최신 태그보다 높은 버전이 파일에 있으면 그대로 씁니다.
 
 [릴리스 워크플로](.github/workflows/release.yml)는 macOS에서 앱을 빌드해 두 곳에 배포합니다. 하나는 이 저장소의 릴리스이고, 다른 하나는 공개 저장소 [MobyD-releases](https://github.com/gyeongjin-kim/MobyD-releases)입니다. 그 저장소가 위의 내려받기 링크와 실행 중인 앱이 읽는 업데이트 정보(`latest.json`)를 제공합니다.
 
