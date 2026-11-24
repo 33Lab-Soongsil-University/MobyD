@@ -99,6 +99,7 @@ fn dispatch(state: &AppState, cmd: &str, x: &Value) -> AppResult<Value> {
             a(x, "force")?,
         ))),
         "remote_list" => v(b(c::remote_list(a(x, "repo")?))),
+        "remote_use_ssh_key" => v(b(c::remote_use_ssh_key_impl(state, a(x, "repo")?, a(x, "remote")?))),
         "remote_add" => v(b(c::remote_add(a(x, "repo")?, a(x, "name")?, a(x, "url")?))),
         "remote_remove" => v(b(c::remote_remove(a(x, "repo")?, a(x, "name")?))),
         "stash_save" => v(b(c::stash_save(a(x, "repo")?, a(x, "message")?, a(x, "includeUntracked")?, a(x, "stagedOnly")?))),

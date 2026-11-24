@@ -109,6 +109,7 @@ pub fn run() {
             commands::remote_pull,
             commands::remote_push,
             commands::remote_list,
+            commands::remote_use_ssh_key,
             commands::remote_add,
             commands::remote_remove,
             commands::stash_save,

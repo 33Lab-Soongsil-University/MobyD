@@ -65,6 +65,7 @@ Pick a host from your `~/.ssh/config`, browse its folders, and open a repository
 - **Low latency** — one multiplexed SSH connection is reused, and a full refresh runs as a single round trip.
 - **Follows you between networks** — if the office address in your SSH config doesn't answer, MobyD reaches the same machine over Tailscale and still checks the host key you already trust.
 - Your own SSH setup is used as-is: keys, ssh-agent, ports, ProxyJump.
+- **HTTPS remotes on the other machine** — when that machine cannot sign in, one click (*Connect with an SSH key*) makes a key for that repository there, adds it as the repository's deploy key through your connected account, and switches the remote to SSH. The key opens that one repository only, which suits shared servers. On a PC only you use, you can instead pass your account token for each command (over ssh's stdin, never a command line or file).
 
 <table>
   <tr>

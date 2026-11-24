@@ -555,3 +555,115 @@ fn fetch_and_clone_send_the_right_accounts_token() {
     assert_eq!(sent.len(), 2, "fetch and clone each reached the server: {sent:?}");
     assert!(sent.iter().all(|a| a == &expected), "git sent {sent:?}");
 }
+
+/// `MOBYD_LIVE_SSH_REPO=ssh://host/path MOBYD_LIVE_URL=https://github.com/o/private.git
+/// MOBYD_LIVE_TOKEN=… cargo test -- --ignored live_token_reaches_git_on_ssh_host`:
+/// a private repository is listed over SSH only with the token, which travels
+/// on ssh's stdin (the host's own credential helpers are switched off).
+#[test]
+#[ignore]
+fn live_token_reaches_git_on_ssh_host() {
+    let repo = std::env::var("MOBYD_LIVE_SSH_REPO").unwrap();
+    let url = std::env::var("MOBYD_LIVE_URL").unwrap();
+    let token = std::env::var("MOBYD_LIVE_TOKEN").unwrap();
+    let header = format!("Authorization: Basic {}", crate::git::remote::base64(format!("x-access-token:{token}").as_bytes()));
+    let args: Vec<std::ffi::OsString> =
+        ["-c", "credential.helper=", "ls-remote", url.as_str(), "HEAD"].iter().map(Into::into).collect();
+    let key = format!("http.{url}.extraHeader");
+    let with = [("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", key.as_str()), ("GIT_CONFIG_VALUE_0", header.as_str())];
+    let out = runner::exec(Path::new(&repo), &args, &with, None).unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("HEAD"));
+    let without = runner::exec(Path::new(&repo), &args, &[], None).unwrap();
+    assert!(!without.status.success(), "the host must not reach it on its own for this check to mean anything");
+}
+
+#[test]
+fn ssh_hosts_get_tokens_only_when_allowed() {
+    let sb = Sandbox::new();
+    let state = sb.state();
+    let url = "https://github.com/me/app.git".to_string();
+    let fallback = sb.dir.path().join("config").join("secrets.json");
+    std::fs::write(&fallback, r#"{"github:github.com:me":"tok-me"}"#).unwrap();
+    state.settings.lock().unwrap().accounts.push(forge::Account {
+        id: "github:github.com:me".into(),
+        kind: ForgeKind::Github,
+        base_url: "https://github.com".into(),
+        username: Some("me".into()),
+        avatar_url: None,
+        api_url: None,
+    });
+    assert!(!auth_env(&state, std::slice::from_ref(&url)).is_empty(), "local git gets the token");
+    // Not allowed: decided before any connection to the host is made.
+    let host = "mobyd-test-host-never-contacted";
+    assert!(block_on(repo_auth_env(&state, &format!("ssh://{host}/srv/app"))).is_empty());
+    assert!(!crate::git::remote::shares_tokens(host));
+}
+
+/// `MOBYD_LIVE_SSH_HOST=<alias> cargo test -- --ignored live_ssh_key_setup`:
+/// on a real SSH host, in a throwaway repository, MobyD makes the key, sends
+/// it to the (mock) service as a deploy key, switches the remote, and — since
+/// the mock never really registers it — puts the remote back.
+#[test]
+#[ignore]
+fn live_ssh_key_setup_rolls_back_when_the_key_is_refused() {
+    use std::sync::{Arc, Mutex};
+    let host = std::env::var("MOBYD_LIVE_SSH_HOST").unwrap();
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = server.server_addr().to_ip().unwrap().port();
+    let posted: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+    let log = posted.clone();
+    std::thread::spawn(move || {
+        for mut req in server.incoming_requests() {
+            let mut body = String::new();
+            let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
+            let url = req.url().to_string();
+            let reply = if url == "/meta" {
+                r#"{"ssh_keys":["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"]}"#.to_string()
+            } else {
+                log.lock().unwrap().push((url, body));
+                "{}".to_string()
+            };
+            let _ = req.respond(tiny_http::Response::from_string(reply).with_status_code(201));
+        }
+    });
+
+    let sb = Sandbox::new();
+    let state = sb.state();
+    std::fs::write(sb.dir.path().join("config").join("secrets.json"), r#"{"github:github.com:me":"tok-me"}"#).unwrap();
+    state.settings.lock().unwrap().accounts.push(forge::Account {
+        id: "github:github.com:me".into(),
+        kind: ForgeKind::Github,
+        base_url: "https://github.com".into(),
+        username: Some("me".into()),
+        avatar_url: None,
+        api_url: Some(format!("http://127.0.0.1:{port}")),
+    });
+
+    let dir = "mobyd-keytest/app";
+    let url = "https://github.com/mobyd-test/keytest.git";
+    let setup =
+        format!("rm -rf ~/mobyd-keytest && mkdir -p ~/{dir} && cd ~/{dir} && git init -q && git remote add origin {url}\n");
+    let out = crate::git::remote::run_script(&host, &setup, None).unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let repo = format!("ssh://{host}/~/{dir}");
+
+    let err = block_on(remote_use_ssh_key_impl(&state, repo.clone(), "origin".into())).unwrap_err().to_string();
+    assert!(err.contains("put back") || err.contains("되돌렸습니다"), "{err}");
+    let posted = posted.lock().unwrap().clone();
+    assert_eq!(posted.len(), 1, "{posted:?}");
+    assert_eq!(posted[0].0, "/repos/mobyd-test/keytest/keys");
+    assert!(posted[0].1.contains("ssh-ed25519 ") && posted[0].1.contains("\"read_only\":false"), "{}", posted[0].1);
+
+    let check = format!(
+        "cd ~/{dir} && git remote get-url origin && (git config core.sshCommand || echo no-ssh-command) && \
+         ls ~/.ssh/mobyd_github_com_mobyd-test_keytest ~/.ssh/mobyd_github_com_mobyd-test_keytest.pub && grep -c '^github.com ' ~/.ssh/mobyd_known_hosts\n"
+    );
+    let out = crate::git::remote::run_script(&host, &check, None).unwrap();
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(out.status.success(), "{text}{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.starts_with(url) && text.contains("no-ssh-command"), "remote and config restored: {text}");
+    let cleanup =
+        "rm -rf ~/mobyd-keytest ~/.ssh/mobyd_github_com_mobyd-test_keytest ~/.ssh/mobyd_github_com_mobyd-test_keytest.pub\n";
+    crate::git::remote::run_script(&host, cleanup, None).unwrap();
+}

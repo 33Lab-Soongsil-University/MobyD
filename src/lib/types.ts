@@ -186,6 +186,8 @@ export interface HostPrefs {
   shell: ShellPref;
   /** Overrides the config's HostName for MobyD only (e.g. a Tailscale address). */
   address: string | null;
+  /** Pass the matching account's token to git on this host for fetch/pull/push/clone. */
+  shareTokens: boolean;
 }
 
 export interface TailscalePeer {

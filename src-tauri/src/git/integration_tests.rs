@@ -753,7 +753,7 @@ fn per_host_shell_override_is_respected() {
     let mut prefs = std::collections::HashMap::new();
     prefs.insert(
         "fakeoverride".to_string(),
-        super::remote::HostPrefs { shell: super::remote::ShellPref::Powershell, address: None },
+        super::remote::HostPrefs { shell: super::remote::ShellPref::Powershell, address: None, share_tokens: false },
     );
     super::remote::set_host_prefs(prefs);
     let err = super::remote::shell("fakeoverride").unwrap_err().to_string();

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ZoomIn, ZoomOut, X, Settings2, Palette, PlugZap, Server, Monitor, Moon, Sun, FolderSearch, Loader2, CheckCircle2, XCircle, SlidersHorizontal } from "lucide-react";
+import { ZoomIn, ZoomOut, X, Settings2, Palette, PlugZap, Server, Monitor, Moon, Sun, FolderSearch, Loader2, CheckCircle2, XCircle, SlidersHorizontal, AlertTriangle } from "lucide-react";
 import { api, errorText } from "../../lib/api";
 import type { AppInfo, HostPrefs, ShellPref, SshHost, TailscalePeer } from "../../lib/types";
 import { applyTheme, getThemePref, type ThemePref } from "../../lib/theme";
@@ -172,7 +172,7 @@ const SHELL_OPTIONS: { id: ShellPref; label: string; hint: string }[] = [
   { id: "powershell", label: "PowerShell", hint: t("기본 셸이 PowerShell인 Windows. Git for Windows의 bash로 실행합니다.") },
 ];
 
-const DEFAULT_PREFS: HostPrefs = { shell: "auto", address: null };
+const DEFAULT_PREFS: HostPrefs = { shell: "auto", address: null, shareTokens: false };
 
 /** A Tailscale peer that looks like this ssh host (same machine name). */
 function matchPeer(h: SshHost, peers: TailscalePeer[]): TailscalePeer | null {
@@ -199,9 +199,11 @@ function HostSettings({
 }) {
   const [shell, setShell] = useState<ShellPref>(prefs.shell);
   const [address, setAddress] = useState(prefs.address ?? "");
+  const [shareTokens, setShareTokens] = useState(prefs.shareTokens ?? false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const dirty = shell !== prefs.shell || (address.trim() || null) !== prefs.address;
+  const dirty =
+    shell !== prefs.shell || (address.trim() || null) !== prefs.address || shareTokens !== (prefs.shareTokens ?? false);
   const save = async (next: HostPrefs) => {
     setBusy(true);
     setErr(null);
@@ -257,18 +259,28 @@ function HostSettings({
           })}
         </small>
       </label>
+      <div className="field">
+        <label className="check">
+          <input type="checkbox" checked={shareTokens} onChange={(e) => setShareTokens(e.target.checked)} />{" "}
+          {t("이 호스트의 git에 계정 토큰 전달")}
+        </label>
+        <small className="share-warn">
+          <AlertTriangle size={12} /> {t("혼자 쓰는 PC에만 켜세요. 실행 중에는 그 PC 관리자가 토큰을 볼 수 있습니다.")}
+        </small>
+      </div>
       {err && <ErrorBox text={err} />}
       <div className="dialog-actions">
         <button
           className="btn"
-          disabled={busy || (prefs.shell === "auto" && !prefs.address && !dirty)}
+          disabled={busy || (prefs.shell === "auto" && !prefs.address && !prefs.shareTokens && !dirty)}
           onClick={() => {
             setShell("auto");
             setAddress("");
+            setShareTokens(false);
             save(DEFAULT_PREFS);
           }}
         >{t("기본값으로")}</button>
-        <button className="btn primary" disabled={busy || !dirty} onClick={() => save({ shell, address: address.trim() || null })}>
+        <button className="btn primary" disabled={busy || !dirty} onClick={() => save({ shell, address: address.trim() || null, shareTokens })}>
           {busy ? <Loader2 size={12} className="spin" /> : null}{" "}{t("저장하고 연결 확인")}</button>
       </div>
     </div>

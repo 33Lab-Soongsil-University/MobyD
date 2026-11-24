@@ -656,15 +656,21 @@ pub fn clone(url: &str, dest: &Path, auth_env: &[(String, String)]) -> AppResult
     }
     if let Some(t) = remote::parse(dest) {
         let parent = t.path.rsplit_once('/').map(|(a, _)| a).filter(|a| !a.is_empty()).unwrap_or("/");
+        let env: Vec<(&str, &str)> = auth_env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
         let script = format!(
-            "{}mkdir -p -- {parent} && cd -- {parent} && {} clone --progress -- {} {}\n",
+            "{}{}mkdir -p -- {parent} && cd -- {parent} && {} clone --progress -- {} {}\n",
             remote::PRELUDE,
+            remote::env_exports(&env),
             remote::GIT_OPTS,
             remote::sh_quote(url),
             remote::sh_quote(&t.path),
             parent = remote::sh_quote(parent)
         );
-        let out = remote::run_script(&t.host, &script, None)?;
+        let out = if env.is_empty() {
+            remote::run_script(&t.host, &script, None)?
+        } else {
+            remote::run_private_script(&t.host, &script)?
+        };
         let text = String::from_utf8_lossy(&out.stderr).trim().to_string();
         return if out.status.success() { Ok(text) } else { Err(AppError::Git(text)) };
     }

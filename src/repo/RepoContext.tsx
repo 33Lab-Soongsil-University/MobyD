@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, errorText } from "../lib/api";
+import { api, errorText, rawErrorText } from "../lib/api";
+import { isAuthFailure } from "../lib/errors";
 import { refsByCommit } from "../lib/graph";
 import type { DiffKind, ForgeRemote, GraphPayload, OpOutcome, RefInfo, RepoInfo, Worktree } from "../lib/types";
-import { toast } from "../store";
+import { toast, useUi } from "../store";
 import { t } from "../lib/i18n";
 
 export const WIP = "WORKING_TREE";
@@ -99,6 +100,7 @@ export function RepoProvider({ info, active, children }: { info: RepoInfo; activ
   const [rebaseBase, setRebaseBase] = useState<{ hash: string; label: string } | null>(null);
   const [blame, setBlame] = useState<{ path: string; rev?: string | null } | null>(null);
   const fingerprint = useRef<string>("");
+  const ctxRef = useRef<RepoCtx | null>(null);
   const loadSeq = useRef(0);
   const busyRef = useRef(false);
 
@@ -181,6 +183,23 @@ export function RepoProvider({ info, active, children }: { info: RepoInfo; activ
     else setDiff(null);
   }, [data, diff]);
 
+  /** Error toast; when a repository opened over SSH cannot sign in to its HTTPS remote, offer the SSH key fix. */
+  const failed = useCallback(
+    (label: string, raw: string, detail: string) => {
+      const canUseKey = path.startsWith("ssh://") && isAuthFailure(raw);
+      useUi.getState().pushToast({
+        kind: "error",
+        title: t("{label} 실패", { label }),
+        detail,
+        ...(canUseKey && {
+          sticky: true,
+          action: { label: t("SSH 키로 연결"), run: () => void import("./actions").then((m) => ctxRef.current && m.connectWithSshKey(ctxRef.current)) },
+        }),
+      });
+    },
+    [path],
+  );
+
   const run = useCallback(
     async <T,>(label: string, fn: () => Promise<T>, opts: RunOpts<T> = {}) => {
       setBusy(label);
@@ -192,7 +211,7 @@ export function RepoProvider({ info, active, children }: { info: RepoInfo; activ
         return r;
       } catch (e) {
         // the user backed out of a question asked along the way: not a failure
-        if (e !== CANCELLED) toast.error(t("{label} 실패", { label }), errorText(e));
+        if (e !== CANCELLED) failed(label, rawErrorText(e), errorText(e));
         return undefined;
       } finally {
         busyRef.current = false;
@@ -200,7 +219,7 @@ export function RepoProvider({ info, active, children }: { info: RepoInfo; activ
         if (opts.reload !== false) await reload();
       }
     },
-    [reload],
+    [reload, failed],
   );
 
   const runOp = useCallback(
@@ -211,10 +230,10 @@ export function RepoProvider({ info, active, children }: { info: RepoInfo; activ
       else if (r.conflicts) {
         toast.warning(t("{label} 중 충돌이 발생했습니다", { label }), t("오른쪽 패널에서 충돌을 해결한 뒤 계속하거나 중단하세요."));
         setSelected(WIP);
-      } else toast.error(t("{label} 실패", { label }), r.message);
+      } else failed(label, r.message, r.message);
       return r;
     },
-    [run],
+    [run, failed],
   );
 
   const refIndex = useMemo(() => refsByCommit(data?.refs ?? []), [data]);
@@ -285,5 +304,6 @@ export function RepoProvider({ info, active, children }: { info: RepoInfo; activ
     isRemote: path.startsWith("ssh://"),
   };
 
+  ctxRef.current = value;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

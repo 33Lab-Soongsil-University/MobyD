@@ -2782,6 +2782,13 @@ ul.recent li:hover {
 .ssh-host-prefs select {
   max-width: 220px;
 }
+.share-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--amber);
+  font-weight: 600;
+}
 .ssh-error {
   display: flex;
   flex-direction: column;

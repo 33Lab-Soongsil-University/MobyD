@@ -21,6 +21,7 @@ import {
   LockOpen,
   Eraser,
   X,
+  KeyRound,
 } from "lucide-react";
 import { api, errorText } from "../lib/api";
 import type { PullRequest, RefInfo } from "../lib/types";
@@ -28,10 +29,12 @@ import { useRepo } from "../repo/RepoContext";
 import {
   addWorktreeFlow,
   checkoutRef,
+  connectWithSshKey,
   createBranchFlow,
   createPrFlow,
   refMenu,
   removeWorktreeFlow,
+  sshKeyCandidates,
   stashActionFlow,
 } from "../repo/actions";
 import { ask, confirmAction, openMenu, openPrefs, useUi } from "../store";
@@ -311,6 +314,9 @@ export function Sidebar() {
                 onContextMenu={(e) =>
                   openMenu(e, [
                     { label: `${fr.remote} fetch`, icon: <RefreshCw size={14} />, onClick: () => ctx.run("Fetch", () => api.fetch(ctx.path, fr.remote), { success: t("{remote} fetch 완료", { remote: fr.remote }) }) },
+                    ...(sshKeyCandidates(ctx).some((r) => r.remote === fr.remote)
+                      ? [{ label: t("SSH 키로 연결…"), icon: <KeyRound size={14} />, onClick: () => connectWithSshKey(ctx, fr.remote) }]
+                      : []),
                     {
                       label: t("원격 제거…"),
                       icon: <Trash2 size={14} />,

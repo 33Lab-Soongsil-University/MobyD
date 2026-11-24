@@ -352,6 +352,50 @@ impl ForgeClient {
         }
     }
 
+    /// Register `public_key` as a deploy key with write access on `repo`. A key
+    /// the service already has for this repository counts as done.
+    pub async fn add_deploy_key(&self, repo: &str, title: &str, public_key: &str) -> AppResult<()> {
+        let (route, body) = match self.kind {
+            ForgeKind::Github | ForgeKind::Gitea => {
+                (format!("/repos/{repo}/keys"), serde_json::json!({ "title": title, "key": public_key, "read_only": false }))
+            }
+            ForgeKind::Gitlab => (
+                format!("/projects/{}/deploy_keys", urlencoding::encode(repo)),
+                serde_json::json!({ "title": title, "key": public_key, "can_push": true }),
+            ),
+        };
+        let resp = self
+            .request(reqwest::Method::POST, &route)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::Http(crate::trf!("{} 연결 실패: {e}", "Could not reach {}: {e}", self.kind.label())))?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        // GitHub reports a key it already has only inside `errors[]` of a 422.
+        if status.is_success() || matches!(status.as_u16(), 400 | 422) && text.contains("already") {
+            return Ok(());
+        }
+        let message = serde_json::from_str::<Value>(&text)
+            .ok()
+            .and_then(|v| v.get("message").and_then(Value::as_str).map(String::from))
+            .unwrap_or_else(|| text.chars().take(200).collect());
+        Err(AppError::Http(format!("{} {}: {message}", self.kind.label(), status.as_u16())))
+    }
+
+    /// `known_hosts` lines for the service's published SSH host keys (GitHub
+    /// lists them at `/meta`); empty when the service does not publish them.
+    pub async fn ssh_host_keys(&self, host: &str) -> Vec<String> {
+        if self.kind != ForgeKind::Github {
+            return Vec::new();
+        }
+        let Ok(meta) = self.send(reqwest::Method::GET, "/meta", None).await else { return Vec::new() };
+        meta.get("ssh_keys")
+            .and_then(Value::as_array)
+            .map(|keys| keys.iter().filter_map(Value::as_str).map(|k| format!("{host} {k}")).collect())
+            .unwrap_or_default()
+    }
+
     pub async fn viewer(&self) -> AppResult<Viewer> {
         let v = self.send(reqwest::Method::GET, "/user", None).await?;
         let username = match self.kind {
@@ -775,6 +819,35 @@ mod http_tests {
         assert_eq!(s[1].body["sha"], "abc123");
         assert_eq!(s[2].body["state_event"], "close");
         assert_eq!((s[3].method.as_str(), s[3].url.as_str()), ("POST", "/projects/group%2Fsub%2Fapp/merge_requests/9/notes"));
+    }
+
+    #[test]
+    fn deploy_keys_and_published_host_keys() {
+        use serde_json::json;
+        let (api, seen) = mock(vec![
+            (201, json!({"id": 1})),
+            (422, json!({"message": "Validation Failed", "errors": [{"message": "key is already in use"}]})),
+            (404, json!({"message": "Not Found"})),
+            (200, json!({"ssh_keys": ["ssh-ed25519 AAAA1", "ecdsa-sha2-nistp256 AAAA2"]})),
+        ]);
+        let c = client(ForgeKind::Github, api.clone());
+        block_on(c.add_deploy_key("me/app", "MobyD · server", "ssh-ed25519 KEY mobyd")).unwrap();
+        block_on(c.add_deploy_key("me/app", "MobyD · server", "ssh-ed25519 KEY mobyd")).expect("an existing key is fine");
+        assert!(block_on(c.add_deploy_key("org/app", "t", "k")).is_err(), "no admin rights");
+        assert_eq!(
+            block_on(c.ssh_host_keys("github.com")),
+            ["github.com ssh-ed25519 AAAA1", "github.com ecdsa-sha2-nistp256 AAAA2"]
+        );
+        let seen = seen.lock().unwrap();
+        assert_eq!((seen[0].method.as_str(), seen[0].url.as_str()), ("POST", "/repos/me/app/keys"));
+        assert_eq!(seen[0].body, json!({"title": "MobyD · server", "key": "ssh-ed25519 KEY mobyd", "read_only": false}));
+        assert_eq!(seen[3].url, "/meta");
+
+        let (api, seen) = mock(vec![(201, json!({"id": 2}))]);
+        block_on(client(ForgeKind::Gitlab, api).add_deploy_key("grp/sub/app", "t", "k")).unwrap();
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].url, "/projects/grp%2Fsub%2Fapp/deploy_keys");
+        assert_eq!(seen[0].body["can_push"], json!(true));
     }
 
     #[test]

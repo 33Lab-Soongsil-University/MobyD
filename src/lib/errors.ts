@@ -15,6 +15,11 @@ export interface Friendly {
 
 type Rule = { re: RegExp; msg: (m: RegExpMatchArray, raw: string) => string; files?: boolean };
 
+/** git could not sign in to an HTTPS remote. */
+const AUTH_FAILED = /could not read Username|Authentication failed|terminal prompts disabled|Invalid username or (password|token)|HTTP Basic: Access denied/i;
+
+export const isAuthFailure = (raw: string) => AUTH_FAILED.test(raw);
+
 const RULES: Rule[] = [
   {
     re: /detected dubious ownership in repository at '([^']+)'/,
@@ -88,7 +93,7 @@ const RULES: Rule[] = [
   { re: /Permission denied \(publickey/, msg: () => t("SSH 키 인증에 실패했습니다. ssh-agent에 키를 올리거나 ~/.ssh/config의 IdentityFile을 확인하세요.") },
   { re: /Host key verification failed/, msg: () => t("처음 접속하는 서버라 확인이 필요합니다. 터미널에서 한 번 ssh로 접속해 서버를 등록하세요.") },
   {
-    re: /could not read Username|Authentication failed|terminal prompts disabled|Invalid username or (password|token)|HTTP Basic: Access denied/i,
+    re: AUTH_FAILED,
     msg: () => t("원격 저장소에 로그인이 필요합니다. 환경설정 → 통합에서 계정을 연결하거나 SSH 주소를 쓰세요."),
   },
   {

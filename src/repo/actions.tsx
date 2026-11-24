@@ -635,3 +635,35 @@ export function commitMenu(ctx: RepoCtx, c: Commit): MenuItem[] {
 export function isWip(hash: string | null) {
   return hash === WIP;
 }
+
+/** HTTPS remotes of a repository opened over SSH, which can switch to an SSH key. */
+export function sshKeyCandidates(ctx: RepoCtx): ForgeRemote[] {
+  if (!ctx.path.startsWith("ssh://")) return [];
+  return ctx.forgeRemotes.filter((fr) => /^https?:\/\//.test(fr.url) && fr.target);
+}
+
+/**
+ * One step from "the PC cannot sign in to GitHub" to working fetch/push: make a
+ * key for this repository on that PC, add it as the repository's deploy key,
+ * and point the remote at the SSH URL.
+ */
+export async function connectWithSshKey(ctx: RepoCtx, remote?: string) {
+  const list = sshKeyCandidates(ctx);
+  const fr = list.find((r) => r.remote === remote) ?? (list.length === 1 ? list[0] : undefined);
+  const host = ctx.path.slice("ssh://".length).split("/")[0];
+  const v = await ask({
+    title: t("SSH 키로 연결"),
+    message: tj("{host}에 이 저장소 전용 키를 만들어 배포 키로 등록하고, 원격 주소를 SSH로 바꿉니다. 키는 이 저장소에만 쓸 수 있습니다.", {
+      host: <b>{host}</b>,
+    }),
+    fields: fr
+      ? undefined
+      : [{ name: "remote", label: t("원격"), type: "select", options: list.map((r) => ({ value: r.remote, label: `${r.remote} · ${r.url}` })), value: list[0]?.remote }],
+    confirmLabel: t("연결"),
+  });
+  if (!v) return;
+  const name = fr?.remote ?? String(v.remote ?? "");
+  if (!name) return;
+  const done = await ctx.run(t("SSH 키로 연결"), () => api.useSshKey(ctx.path, name), { success: (m) => m });
+  if (done) await ctx.run("Fetch", () => api.fetch(ctx.path, name), { quiet: true });
+}

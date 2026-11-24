@@ -163,8 +163,9 @@ pub async fn repo_clone(state: State<'_, AppState>, url: String, dest: String) -
 }
 
 pub async fn repo_clone_impl(state: &AppState, url: String, dest: String) -> AppResult<String> {
-    // Tokens are only handed to the local git; a clone on an SSH host uses that host's credentials.
-    let env = if runner::is_remote(&p(&dest)) {
+    // An SSH host gets tokens only when the user turned that on for it;
+    // otherwise git there uses the host's own credentials.
+    let env = if crate::git::remote::parse(&p(&dest)).is_some_and(|t| !crate::git::remote::shares_tokens(&t.host)) {
         vec![]
     } else {
         learn_accounts(state, std::slice::from_ref(&url)).await;
@@ -303,10 +304,11 @@ fn remote_urls(repo: &str) -> Vec<String> {
 }
 
 async fn repo_auth_env(state: &AppState, repo: &str) -> Vec<(String, String)> {
-    if runner::is_remote(&p(repo)) {
+    if crate::git::remote::parse(&p(repo)).is_some_and(|t| !crate::git::remote::shares_tokens(&t.host)) {
         return vec![];
     }
-    let urls = remote_urls(repo);
+    let repo_owned = repo.to_string();
+    let urls = blocking(move || Ok(remote_urls(&repo_owned))).await.unwrap_or_default();
     learn_accounts(state, &urls).await;
     auth_env(state, &urls)
 }
@@ -978,6 +980,104 @@ pub async fn remote_push_impl(
 ) -> AppResult<String> {
     let env = repo_auth_env(state, &repo).await;
     writing(repo.clone(), move || ops::push(&p(&repo), remote.as_deref(), branch.as_deref(), set_upstream, force, &env)).await
+}
+
+/// For a repository opened over SSH whose remote is HTTPS: create a key for
+/// this repository on that host, register it as the repository's deploy key
+/// with the connected account, and switch the remote to the SSH URL. The key
+/// only opens this one repository, and nothing on the host outside its
+/// `~/.ssh/mobyd_*` files and this repository's git config changes.
+#[tauri::command]
+pub async fn remote_use_ssh_key(state: State<'_, AppState>, repo: String, remote: String) -> AppResult<String> {
+    remote_use_ssh_key_impl(&state, repo, remote).await
+}
+
+pub async fn remote_use_ssh_key_impl(state: &AppState, repo: String, remote: String) -> AppResult<String> {
+    use crate::git::remote::{run_script, sh_quote, PRELUDE};
+    let host = crate::git::remote::parse(&p(&repo)).map(|t| t.host).ok_or_else(|| {
+        AppError::invalid(crate::tr!("SSH로 연 저장소에서만 쓸 수 있습니다.", "Only for repositories opened over SSH."))
+    })?;
+    let (client, path) = client_for(state, &repo, &remote).await?;
+    let (repo_c, remote_c) = (repo.clone(), remote.clone());
+    let url = blocking(move || repo::remotes(&p(&repo_c)))
+        .await?
+        .into_iter()
+        .find(|r| r.name == remote_c)
+        .map(|r| r.fetch_url)
+        .unwrap_or_default();
+    let target = forge::parse_remote_url(&url)
+        .filter(|_| url.starts_with("https://") || url.starts_with("http://"))
+        .ok_or_else(|| AppError::invalid(crate::tr!("이 원격은 HTTPS 주소가 아닙니다.", "This remote is not an HTTPS URL.")))?;
+    if client.token.is_none() {
+        return Err(AppError::invalid(crate::trf!(
+            "{} 계정을 먼저 연결하세요 (환경설정 → 통합).",
+            "Connect a {} account first (Preferences → Integrations).",
+            target.host
+        )));
+    }
+    let server = target.host.split(':').next().unwrap_or_default().to_string();
+    let ssh_url = format!("git@{server}:{path}.git");
+    let slug: String =
+        format!("{server}_{path}").chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
+    let known = client.ssh_host_keys(&server).await;
+
+    // 1. A key for this repository on the host (kept if it already exists).
+    let mut script = format!(
+        "{PRELUDE}umask 077\nmkdir -p \"$HOME/.ssh\" || exit 1\nkey=\"$HOME/.ssh/mobyd_{slug}\"\nkh=\"$HOME/.ssh/mobyd_known_hosts\"\n\
+         [ -f \"$key\" ] || ssh-keygen -q -t ed25519 -N '' -C {comment} -f \"$key\" </dev/null >/dev/null || exit 1\ntouch \"$kh\"\n",
+        comment = sh_quote(&format!("mobyd {path} on {host}"))
+    );
+    for line in &known {
+        let q = sh_quote(line);
+        script.push_str(&format!("grep -qxF {q} \"$kh\" || printf '%s\\n' {q} >> \"$kh\"\n"));
+    }
+    script.push_str("echo \"KEY=$key\"\necho \"KH=$kh\"\nprintf 'PUB=%s\\n' \"$(cat \"$key.pub\")\"\n");
+    let host_c = host.clone();
+    let out = blocking(move || run_script(&host_c, &script, None)).await?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let field = |k: &str| text.lines().find_map(|l| l.strip_prefix(k)).map(str::trim).map(String::from);
+    let (Some(key), Some(kh), Some(public)) = (field("KEY="), field("KH="), field("PUB=")) else {
+        return Err(AppError::Git(crate::trf!(
+            "{}에서 SSH 키를 만들지 못했습니다: {}",
+            "Could not create an SSH key on {}: {}",
+            host,
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    };
+
+    // 2. Register it as this repository's deploy key (write access, so push works).
+    client.add_deploy_key(&path, &format!("MobyD · {host}"), &public).await.map_err(|e| {
+        AppError::Http(crate::trf!(
+            "배포 키를 등록하지 못했습니다. 이 저장소의 관리자 권한이 있는 계정이어야 합니다. ({e})",
+            "Could not add the deploy key. The account needs admin rights on this repository. ({e})"
+        ))
+    })?;
+
+    // 3. Use the key for this repository and switch the remote; undo both if it still cannot connect.
+    let strict = if known.is_empty() { "accept-new" } else { "yes" };
+    let ssh_command = format!(
+        "ssh -i {} -o IdentitiesOnly=yes -o UserKnownHostsFile={} -o StrictHostKeyChecking={strict}",
+        sh_quote(&key),
+        sh_quote(&kh)
+    );
+    let (repo_c, ssh_url_c) = (repo.clone(), ssh_url.clone());
+    writing(repo.clone(), move || {
+        let path = p(&repo_c);
+        runner::run(&path, ["config", "core.sshCommand", ssh_command.as_str()])?;
+        runner::run(&path, ["remote", "set-url", remote.as_str(), ssh_url_c.as_str()])?;
+        let (ok, text) = runner::run_report(&path, ["ls-remote", remote.as_str(), "HEAD"])?;
+        if ok {
+            return Ok(());
+        }
+        let _ = runner::run(&path, ["remote", "set-url", remote.as_str(), url.as_str()]);
+        let _ = runner::run(&path, ["config", "--unset", "core.sshCommand"]);
+        Err(AppError::Git(crate::trf!(
+            "SSH 키로 접속을 확인하지 못해 원래 주소로 되돌렸습니다: {text}",
+            "Could not connect with the SSH key, so the remote was put back: {text}"
+        )))
+    })
+    .await?;
+    Ok(crate::trf!("이제 {ssh_url}로 연결합니다.", "Now connects via {ssh_url}."))
 }
 
 #[tauri::command]

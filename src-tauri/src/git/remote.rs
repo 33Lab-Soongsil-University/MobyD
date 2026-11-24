@@ -100,9 +100,7 @@ pub fn cd_line(path: &str) -> String {
 pub fn git_script(path: &str, args: &[String], env: &[(&str, &str)]) -> String {
     let mut s = String::from(PRELUDE);
     s.push_str(&cd_line(path));
-    for (k, v) in env {
-        s.push_str(&format!("export {k}={}\n", sh_quote(v)));
-    }
+    s.push_str(&env_exports(env));
     s.push_str("exec ");
     s.push_str(GIT_OPTS);
     for a in args {
@@ -131,6 +129,10 @@ pub struct HostPrefs {
     pub shell: ShellPref,
     /// Address to use instead of the config's HostName (e.g. a Tailscale IP).
     pub address: Option<String>,
+    /// Hand the matching account's token to git on this host for fetch, pull,
+    /// push and clone. Off by default: the token reaches the host for the
+    /// length of each command (never a file or git config).
+    pub share_tokens: bool,
 }
 
 fn host_prefs() -> &'static Mutex<HashMap<String, HostPrefs>> {
@@ -162,6 +164,21 @@ pub fn set_host_prefs(prefs: HashMap<String, HostPrefs>) {
 
 fn prefs_for(host: &str) -> HostPrefs {
     host_prefs().lock().unwrap().get(host).cloned().unwrap_or_default()
+}
+
+/// Whether the user lets MobyD pass account tokens to git on `host`.
+pub fn shares_tokens(host: &str) -> bool {
+    prefs_for(host).share_tokens
+}
+
+/// Environment that carries credentials (`GIT_CONFIG_VALUE_*` holds auth headers).
+fn carries_secrets<K: AsRef<str>>(keys: impl IntoIterator<Item = K>) -> bool {
+    keys.into_iter().any(|k| k.as_ref().starts_with("GIT_CONFIG_VALUE_"))
+}
+
+/// `export` lines for a script.
+pub fn env_exports(env: &[(&str, &str)]) -> String {
+    env.iter().map(|(k, v)| format!("export {k}={}\n", sh_quote(v))).collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -427,7 +444,8 @@ fn spawn_ssh(host: &str, remote_cmd: &str, stdin: Option<&[u8]>) -> AppResult<Ou
     if stdin.is_some() {
         cmd.stdin(Stdio::piped());
     }
-    let mut child = cmd.spawn().map_err(|e| AppError::Git(crate::trf!("ssh를 실행할 수 없습니다: {e}", "Could not run ssh: {e}")))?;
+    let mut child =
+        cmd.spawn().map_err(|e| AppError::Git(crate::trf!("ssh를 실행할 수 없습니다: {e}", "Could not run ssh: {e}")))?;
     if let Some(input) = stdin {
         if let Some(mut pipe) = child.stdin.take() {
             // ssh that failed to connect has already gone: the write then fails with
@@ -543,7 +561,9 @@ pub fn is_stale_connection(stderr: &[u8]) -> bool {
 /// command was handed over: safe to retry even for a command that changes things.
 pub fn never_started(stderr: &[u8]) -> bool {
     let e = String::from_utf8_lossy(stderr).to_lowercase();
-    ["control socket connect", "refused session request", "session request failed", "mux_client_hello_exchange"].iter().any(|k| e.contains(k))
+    ["control socket connect", "refused session request", "session request failed", "mux_client_hello_exchange"]
+        .iter()
+        .any(|k| e.contains(k))
 }
 
 pub fn ssh_error(host: &str, out: &Output) -> Option<AppError> {
@@ -761,8 +781,15 @@ pub fn script_with_stdin(script: &str, stdin: Option<&[u8]>) -> String {
 
 /// The command line and stdin to send for `script`. Short scripts without input
 /// go on the command line; everything else is sent as a counted stdin payload.
+#[cfg(test)]
 pub fn invocation(shell: &Shell, script: &str, stdin: Option<&[u8]>) -> (String, Option<Vec<u8>>) {
-    if stdin.is_none() {
+    invocation_with(shell, script, stdin, false)
+}
+
+/// Like [`invocation`]; `private` keeps the script off every command line
+/// (where other users of either machine could read it with `ps`).
+fn invocation_with(shell: &Shell, script: &str, stdin: Option<&[u8]>, private: bool) -> (String, Option<Vec<u8>>) {
+    if stdin.is_none() && !private {
         let line = remote_command_line(shell, script);
         if line.len() <= MAX_COMMAND_LINE {
             return (line, None);
@@ -774,8 +801,17 @@ pub fn invocation(shell: &Shell, script: &str, stdin: Option<&[u8]>) -> (String,
 
 /// Run a POSIX script on `host`.
 pub fn run_script(host: &str, script: &str, stdin: Option<&[u8]>) -> AppResult<Output> {
+    run_script_with(host, script, stdin, false)
+}
+
+/// Run a script that holds secrets: it travels only on ssh's stdin.
+pub fn run_private_script(host: &str, script: &str) -> AppResult<Output> {
+    run_script_with(host, script, None, true)
+}
+
+fn run_script_with(host: &str, script: &str, stdin: Option<&[u8]>, private: bool) -> AppResult<Output> {
     let shell = shell(host)?;
-    let (line, input) = invocation(&shell, script, stdin);
+    let (line, input) = invocation_with(&shell, script, stdin, private);
     let out = run_ssh(host, &line, input.as_deref())?;
     if let Some(e) = ssh_error(host, &out) {
         return Err(e);
@@ -785,7 +821,8 @@ pub fn run_script(host: &str, script: &str, stdin: Option<&[u8]>) -> AppResult<O
 
 /// Run one git command in a remote repository.
 pub fn exec_git(t: &SshTarget, args: &[String], env: &[(&str, &str)], stdin: Option<&[u8]>) -> AppResult<Output> {
-    let out = run_script(&t.host, &git_script(&t.path, args, env), stdin)?;
+    let private = carries_secrets(env.iter().map(|(k, _)| *k));
+    let out = run_script_with(&t.host, &git_script(&t.path, args, env), stdin, private)?;
     if out.status.code() == Some(97) {
         return Err(AppError::invalid(crate::trf!(
             "{}: 폴더에 들어갈 수 없습니다: {}",
@@ -1122,6 +1159,26 @@ mod tests {
         assert!(s.contains("export GIT_OPTIONAL_LOCKS=0"));
         assert!(s.trim_end().ends_with("log --format=%s 'a b'"));
         assert!(git_script("~/code/x", &[], &[]).contains("cd -- \"$HOME\"/code/x"));
+    }
+
+    #[test]
+    fn scripts_with_tokens_never_go_on_the_command_line() {
+        let bash = "C:\\Program Files\\Git\\bin\\bash.exe".to_string();
+        let env = [
+            ("GIT_CONFIG_COUNT", "1"),
+            ("GIT_CONFIG_KEY_0", "http.https://github.com/.extraHeader"),
+            ("GIT_CONFIG_VALUE_0", "Authorization: Basic c2VjcmV0"),
+        ];
+        assert!(carries_secrets(env.iter().map(|(k, _)| *k)));
+        assert!(!carries_secrets(["GIT_OPTIONAL_LOCKS"]));
+        let script = git_script("/srv/app", &["fetch".into()], &env);
+        for shell in [Shell::Posix, Shell::WinCmd { bash: bash.clone() }, Shell::WinPs { bash }] {
+            let (line, input) = invocation_with(&shell, &script, None, true);
+            assert!(!line.contains("c2VjcmV0") && !line.contains("Authorization"), "{line}");
+            assert!(String::from_utf8(input.unwrap()).unwrap().contains("c2VjcmV0"));
+            let (line, input) = invocation_with(&shell, &script, Some(b"data"), true);
+            assert!(!line.contains("c2VjcmV0") && input.is_some());
+        }
     }
 
     #[test]

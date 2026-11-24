@@ -116,6 +116,7 @@ export const api = {
   remotes: (repo: string) => invoke<Remote[]>("remote_list", { repo }),
   addRemote: (repo: string, name: string, url: string) => invoke<string>("remote_add", { repo, name, url }),
   removeRemote: (repo: string, name: string) => invoke<string>("remote_remove", { repo, name }),
+  useSshKey: (repo: string, remote: string) => invoke<string>("remote_use_ssh_key", { repo, remote }),
 
   stashSave: (repo: string, message: string | null, includeUntracked: boolean, stagedOnly = false) =>
     invoke<string>("stash_save", { repo, message, includeUntracked, stagedOnly }),
