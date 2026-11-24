@@ -5,6 +5,10 @@
 <h1 align="center">MobyD</h1>
 
 <p align="center">
+  <b>English</b> · <a href="README.ko.md">한국어</a>
+</p>
+
+<p align="center">
   A fast, native Git client for macOS — with repositories on your other machines, over SSH.
 </p>
 
@@ -138,11 +142,13 @@ pnpm release && pnpm selftest   # build the app, then drive its UI in English an
 
 The Rust tests include feature tests (`src-tauri/src/feature_tests.rs`) that run every git feature through the same commands the UI calls, on throwaway repositories with a local server repository: staging, commits and amend, discard, branches, tags, merge, rebase, cherry-pick, revert, reset, conflicts, interactive rebase, stashes, worktrees, push, clone, fetch and pull, plus Undo/Redo after each kind of change and the account token sent to git. The self-test (`src/lib/selftest.ts`) opens a demo repository in the real app window and checks the graph, panels, rebase editor, layout, command palette, commit with undo/redo, themes and preferences. CI runs the frontend checks on every push; the release workflow (macOS) runs all of them, plus the self-test on the built app, before anything is published.
 
-More detail (shortcuts, the dev bridge for working on the UI in a browser, the self-test, architecture) is in [docs/guide.ko.md](docs/guide.ko.md) and [docs/architecture.md](docs/architecture.md) (Korean).
+More detail (shortcuts, the dev bridge for working on the UI in a browser, the self-test, architecture) is in [docs/guide.ko.md](docs/guide.ko.md) and [docs/architecture.md](docs/architecture.md) (Korean). A Korean version of this README is [README.ko.md](README.ko.md).
 
-## Releasing
+## Contributing and releasing
 
-Work goes to the `develop` branch; every push to `main` is a release. Merge `develop` into `main` and push:
+Work happens on the `develop` branch; please open pull requests against `develop`. Pull requests into `main` need the maintainer's approval before they can be merged.
+
+Every push to `main` is a release. Merge `develop` into `main` and push:
 
 ```bash
 git checkout main && git merge develop && git push origin main
