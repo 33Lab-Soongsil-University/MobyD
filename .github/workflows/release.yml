@@ -166,7 +166,7 @@ jobs:
 
           # commit subjects since the previous release, without the version bumps
           PREV="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
-          git log --no-merges --pretty='- %s' ${PREV:+"$PREV.."}"$TAG" | grep -v '^- Release ' > "$RUNNER_TEMP/notes.md" || true
+          git log --no-merges --pretty='- %s' ${PREV:+"$PREV.."}"$TAG" | grep -v -E '^- Release [0-9]+[.][0-9]+[.][0-9]+$' > "$RUNNER_TEMP/notes.md" || true
           test -s "$RUNNER_TEMP/notes.md" || echo "- Maintenance release" > "$RUNNER_TEMP/notes.md"
 
           OUT="$RUNNER_TEMP/public"
