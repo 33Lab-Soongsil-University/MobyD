@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/gyeongjin-kim/MobyD-releases/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/gyeongjin-kim/MobyD-releases?label=release&color=2ed3e6"></a>
-  <a href="https://github.com/gyeongjin-kim/MobyD/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/gyeongjin-kim/MobyD/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/33Lab-Soongsil-University/MobyD/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/33Lab-Soongsil-University/MobyD/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20(Apple%20silicon)-lightgrey">
 </p>
 
