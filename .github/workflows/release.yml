@@ -5,15 +5,17 @@ name: Release
 #      it is ahead of the latest v* tag (set by hand with scripts/set-version.sh
 #      for a minor or major bump), otherwise the latest tag with the patch
 #      number raised. It commits "Release X.Y.Z" on top of the push when the
-#      files need it, then pushes that commit to main with the tag vX.Y.Z, and
-#      fast-forwards develop to it when develop has nothing newer.
+#      files need it, pushes the tag vX.Y.Z, and fast-forwards develop to that
+#      commit when develop has nothing newer. main is protected (pull requests
+#      need the maintainer's approval) and the workflow cannot bypass that, so
+#      the version commit reaches main with the next merge from develop.
 #   2. `macos` builds that tag, runs every check, and publishes it twice:
 #      * here, as a release of this (private) repository;
 #      * in the public gyeongjin-kim/MobyD-releases repository, which serves the
 #        download link and the update feed (latest.json) running apps read.
-# Pushes made with the workflow token never start workflows, so the release
-# commit does not trigger another release. If main moved on while a run was
-# preparing, that run stops and the run for the newer push releases both.
+# Pushes made with the workflow token never start workflows, so the tag and
+# the develop update do not trigger anything. If main moved on while a run was
+# waiting, that run stops and the run for the newer push releases both.
 #
 # This repository cannot write to the public one directly, so the files are
 # pushed to its `incoming` branch with a deploy key and a workflow there
@@ -81,11 +83,8 @@ jobs:
             git commit -qam "Release $NEXT"
           fi
           git tag "v$NEXT"
-          if ! git push --atomic origin HEAD:main "v$NEXT"; then
-            echo "main moved on since this push; the run for the newer push releases it"
-            exit 0
-          fi
-          # keep develop on the released version when it has nothing newer
+          git push origin "v$NEXT"
+          # carry the version commit to develop (and from there to main) when develop has nothing newer
           git push origin HEAD:develop 2>/dev/null || echo "develop has newer commits; left as is"
           echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
 

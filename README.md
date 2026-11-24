@@ -154,7 +154,7 @@ Every push to `main` is a release. Merge `develop` into `main` and push:
 git checkout main && git merge develop && git push origin main
 ```
 
-The workflow raises the patch number of the latest `v*` tag (0.1.9 → 0.1.10), commits `Release X.Y.Z` to `main`, tags it, and moves `develop` up to that commit. For a minor or major version, run `scripts/set-version.sh 0.2.0` on `develop` before merging; a version ahead of the latest tag is used as is.
+The workflow raises the patch number of the latest `v*` tag (0.1.9 → 0.1.10), commits `Release X.Y.Z` on top of the push, tags it, and moves `develop` up to that commit; the version commit reaches `main` with the next merge. For a minor or major version, run `scripts/set-version.sh 0.2.0` on `develop` before merging; a version ahead of the latest tag is used as is.
 
 The [release workflow](.github/workflows/release.yml) builds the app on macOS and publishes it in two places: as a release of this repository, and in the public [MobyD-releases](https://github.com/gyeongjin-kim/MobyD-releases) repository, which serves the download link above and the update feed (`latest.json`) that running apps read.
 
