@@ -337,6 +337,21 @@ impl ForgeClient {
         Ok(serde_json::from_str(&text)?)
     }
 
+    /// Whether this connection can see the repository at `path` (`owner/repo`);
+    /// `None` when the service could not be asked or gave no clear answer.
+    pub async fn can_see(&self, path: &str) -> Option<bool> {
+        let route = match self.kind {
+            ForgeKind::Gitlab => format!("/projects/{}", urlencoding::encode(path)),
+            ForgeKind::Github | ForgeKind::Gitea => format!("/repos/{path}"),
+        };
+        let status = self.request(reqwest::Method::GET, &route).send().await.ok()?.status();
+        match status.as_u16() {
+            200..=299 => Some(true),
+            401 | 403 | 404 => Some(false),
+            _ => None,
+        }
+    }
+
     pub async fn viewer(&self) -> AppResult<Viewer> {
         let v = self.send(reqwest::Method::GET, "/user", None).await?;
         let username = match self.kind {

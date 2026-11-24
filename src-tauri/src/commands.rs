@@ -164,35 +164,126 @@ pub async fn repo_clone(state: State<'_, AppState>, url: String, dest: String) -
 
 pub async fn repo_clone_impl(state: &AppState, url: String, dest: String) -> AppResult<String> {
     // Tokens are only handed to the local git; a clone on an SSH host uses that host's credentials.
-    let env = if runner::is_remote(&p(&dest)) { vec![] } else { auth_env(state, std::slice::from_ref(&url)) };
+    let env = if runner::is_remote(&p(&dest)) {
+        vec![]
+    } else {
+        learn_accounts(state, std::slice::from_ref(&url)).await;
+        auth_env(state, std::slice::from_ref(&url))
+    };
     blocking(move || ops::clone(&url, &p(&dest), &env)).await
+}
+
+/// Which connected account reaches a repository, keyed by [`repo_key`]. An
+/// empty id means no account could see it. Kept for the app session and
+/// cleared whenever an account is added or removed.
+fn account_choices() -> &'static Mutex<std::collections::HashMap<String, String>> {
+    static CHOICES: std::sync::OnceLock<Mutex<std::collections::HashMap<String, String>>> = std::sync::OnceLock::new();
+    CHOICES.get_or_init(Default::default)
+}
+
+fn repo_key(t: &RemoteTarget) -> String {
+    format!("{}/{}", t.host, t.path).to_ascii_lowercase()
+}
+
+/// Accounts on the remote's host, best first: the one known to reach this
+/// repository, then the one named like the owner, then the rest in the order
+/// they were added.
+fn accounts_for<'a>(settings: &'a Settings, t: &RemoteTarget) -> Vec<&'a Account> {
+    let host_only = t.host.split(':').next().unwrap_or_default();
+    let mut list: Vec<&Account> = settings.accounts.iter().filter(|a| a.host() == t.host).collect();
+    if list.is_empty() {
+        list = settings.accounts.iter().filter(|a| a.host().split(':').next() == Some(host_only)).collect();
+    }
+    let known = account_choices().lock().unwrap().get(&repo_key(t)).cloned();
+    let owner = t.owner.split('/').next().unwrap_or_default();
+    list.sort_by_key(|a| {
+        if known.as_deref() == Some(a.id.as_str()) {
+            0
+        } else if a.username.as_deref().is_some_and(|u| u.eq_ignore_ascii_case(owner)) {
+            1
+        } else {
+            2
+        }
+    });
+    list
+}
+
+/// When several accounts share a remote's host, ask the service which of them
+/// can see the repository, so git and the pull-request features use that one.
+async fn learn_accounts(state: &AppState, urls: &[String]) {
+    for url in urls {
+        let Some(t) = forge::parse_remote_url(url) else { continue };
+        let key = repo_key(&t);
+        if account_choices().lock().unwrap().contains_key(&key) {
+            continue;
+        }
+        let candidates: Vec<Account> = {
+            let settings = state.settings.lock().unwrap();
+            accounts_for(&settings, &t).into_iter().cloned().collect()
+        };
+        if candidates.len() < 2 {
+            continue;
+        }
+        let mut found = Some(String::new());
+        for a in &candidates {
+            let Some(token) = state.secrets.get(&a.id) else { continue };
+            let api = a.api_url.clone().filter(|u| !u.trim().is_empty()).unwrap_or_else(|| forge::api_base(a.kind, &a.base_url));
+            let client = ForgeClient { kind: a.kind, api, token: Some(token), http: state.http.clone() };
+            match client.can_see(&t.path).await {
+                Some(true) => {
+                    found = Some(a.id.clone());
+                    break;
+                }
+                Some(false) => {}
+                // Offline or a server hiccup: decide next time instead of remembering "nobody".
+                None => found = None,
+            }
+        }
+        if let Some(id) = found {
+            account_choices().lock().unwrap().insert(key, id);
+        }
+    }
 }
 
 /// Per-URL HTTP auth headers for HTTPS remotes that match a connected account.
 /// Passed through `GIT_CONFIG_*` environment variables so tokens never land in
-/// a config file or on the command line.
+/// a config file or on the command line. When remotes on one host need
+/// different accounts, each header is scoped to its remote's URL.
 pub fn auth_env(state: &AppState, urls: &[String]) -> Vec<(String, String)> {
     let settings = state.settings.lock().unwrap().clone();
-    let mut pairs: Vec<(String, String)> = Vec::new();
+    // (scheme://host, remote url, header value)
+    let mut found: Vec<(String, String, String)> = Vec::new();
     for url in urls {
         let Some((scheme, rest)) = url.split_once("://") else { continue };
         if scheme != "https" && scheme != "http" {
             continue;
         }
         let host = rest.split('/').next().unwrap_or_default().rsplit('@').next().unwrap_or_default().to_ascii_lowercase();
-        let Some(acc) = settings.accounts.iter().find(|a| a.host() == host) else { continue };
-        let Some(token) = state.secrets.get(&acc.id) else { continue };
+        let accounts: Vec<&Account> = match forge::parse_remote_url(url) {
+            // No connected account can see it: send no token, so the user's own
+            // git credential helper still gets its turn.
+            Some(t) if account_choices().lock().unwrap().get(&repo_key(&t)).is_some_and(String::is_empty) => continue,
+            Some(t) => accounts_for(&settings, &t),
+            None => settings.accounts.iter().filter(|a| a.host() == host).collect(),
+        };
+        let Some((acc, token)) = accounts.into_iter().find_map(|a| state.secrets.get(&a.id).map(|t| (a, t))) else {
+            continue;
+        };
         let user = match acc.kind {
             ForgeKind::Github => "x-access-token".to_string(),
             ForgeKind::Gitlab => "oauth2".to_string(),
             ForgeKind::Gitea => acc.username.clone().unwrap_or_else(|| "token".into()),
         };
-        let key = format!("http.{scheme}://{host}/.extraHeader");
-        if pairs.iter().any(|(k, _)| k == &key) {
-            continue;
-        }
         let value = format!("Authorization: Basic {}", crate::git::remote::base64(format!("{user}:{token}").as_bytes()));
-        pairs.push((key, value));
+        found.push((format!("{scheme}://{host}"), url.trim_end_matches('/').to_string(), value));
+    }
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for (origin, url, value) in &found {
+        let same_everywhere = found.iter().filter(|(o, _, _)| o == origin).all(|(_, _, v)| v == value);
+        let key = if same_everywhere { format!("http.{origin}/.extraHeader") } else { format!("http.{url}.extraHeader") };
+        if !pairs.iter().any(|(k, _)| k == &key) {
+            pairs.push((key, value.clone()));
+        }
     }
     let mut env = vec![("GIT_CONFIG_COUNT".to_string(), pairs.len().to_string())];
     for (i, (k, v)) in pairs.into_iter().enumerate() {
@@ -205,13 +296,18 @@ pub fn auth_env(state: &AppState, urls: &[String]) -> Vec<(String, String)> {
     env
 }
 
-fn repo_auth_env(state: &AppState, repo: &str) -> Vec<(String, String)> {
+fn remote_urls(repo: &str) -> Vec<String> {
+    repo::remotes(&p(repo))
+        .map(|rs| rs.into_iter().flat_map(|r| [r.fetch_url, r.push_url]).filter(|u| !u.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+async fn repo_auth_env(state: &AppState, repo: &str) -> Vec<(String, String)> {
     if runner::is_remote(&p(repo)) {
         return vec![];
     }
-    let urls: Vec<String> = repo::remotes(&p(repo))
-        .map(|rs| rs.into_iter().flat_map(|r| [r.fetch_url, r.push_url]).filter(|u| !u.is_empty()).collect())
-        .unwrap_or_default();
+    let urls = remote_urls(repo);
+    learn_accounts(state, &urls).await;
     auth_env(state, &urls)
 }
 
@@ -846,7 +942,7 @@ pub async fn remote_fetch(state: State<'_, AppState>, repo: String, remote: Opti
 }
 
 pub async fn remote_fetch_impl(state: &AppState, repo: String, remote: Option<String>) -> AppResult<String> {
-    let env = repo_auth_env(state, &repo);
+    let env = repo_auth_env(state, &repo).await;
     writing(repo.clone(), move || ops::fetch(&p(&repo), remote.as_deref(), true, &env)).await
 }
 
@@ -856,7 +952,7 @@ pub async fn remote_pull(state: State<'_, AppState>, repo: String, mode: String)
 }
 
 pub async fn remote_pull_impl(state: &AppState, repo: String, mode: String) -> AppResult<OpOutcome> {
-    let env = repo_auth_env(state, &repo);
+    let env = repo_auth_env(state, &repo).await;
     head_journaled(repo, "Pull".into(), false, |r: &OpOutcome| r.ok, move |path| ops::pull(path, &mode, &env)).await
 }
 
@@ -880,7 +976,7 @@ pub async fn remote_push_impl(
     set_upstream: bool,
     force: bool,
 ) -> AppResult<String> {
-    let env = repo_auth_env(state, &repo);
+    let env = repo_auth_env(state, &repo).await;
     writing(repo.clone(), move || ops::push(&p(&repo), remote.as_deref(), branch.as_deref(), set_upstream, force, &env)).await
 }
 
@@ -1005,11 +1101,7 @@ fn resolve_remote(settings: &Settings, remote: &repo::Remote) -> ForgeRemote {
     };
     let Some(t) = target else { return out };
     let host_only = t.host.split(':').next().unwrap_or_default().to_string();
-    let account = settings
-        .accounts
-        .iter()
-        .find(|a| a.host() == t.host)
-        .or_else(|| settings.accounts.iter().find(|a| a.host().split(':').next() == Some(host_only.as_str())));
+    let account = accounts_for(settings, &t).into_iter().next();
     if let Some(a) = account {
         out.kind = Some(a.kind);
         out.account_id = Some(a.id.clone());
@@ -1034,11 +1126,12 @@ pub async fn forge_remotes_impl(state: &AppState, repo: String) -> AppResult<Vec
     Ok(remotes.iter().map(|r| resolve_remote(&settings, r)).collect())
 }
 
-fn client_for(state: &AppState, repo_path: &str, remote_name: &str) -> AppResult<(ForgeClient, String)> {
+async fn client_for(state: &AppState, repo_path: &str, remote_name: &str) -> AppResult<(ForgeClient, String)> {
     let remotes = repo::remotes(&p(repo_path))?;
     let remote = remotes.iter().find(|r| r.name == remote_name).ok_or_else(|| {
         AppError::invalid(crate::trf!("원격 '{remote_name}'을 찾을 수 없습니다", "Remote '{remote_name}' not found"))
     })?;
+    learn_accounts(state, &[remote.fetch_url.clone(), remote.push_url.clone()]).await;
     let settings = state.settings.lock().unwrap().clone();
     let fr = resolve_remote(&settings, remote);
     let target = fr.target.ok_or_else(|| {
@@ -1079,7 +1172,7 @@ pub async fn pr_list_impl(
     remote: String,
     pr_state: String,
 ) -> AppResult<Vec<forge::PullRequest>> {
-    let (client, path) = client_for(state, &repo, &remote)?;
+    let (client, path) = client_for(state, &repo, &remote).await?;
     client.list(&path, &pr_state).await
 }
 
@@ -1089,7 +1182,7 @@ pub async fn pr_get(state: State<'_, AppState>, repo: String, remote: String, nu
 }
 
 pub async fn pr_get_impl(state: &AppState, repo: String, remote: String, number: u64) -> AppResult<forge::PullRequest> {
-    let (client, path) = client_for(state, &repo, &remote)?;
+    let (client, path) = client_for(state, &repo, &remote).await?;
     client.get(&path, number).await
 }
 
@@ -1109,7 +1202,7 @@ pub async fn pr_create_impl(
     remote: String,
     request: NewPullRequest,
 ) -> AppResult<forge::PullRequest> {
-    let (client, path) = client_for(state, &repo, &remote)?;
+    let (client, path) = client_for(state, &repo, &remote).await?;
     client.create(&path, &request).await
 }
 
@@ -1131,7 +1224,7 @@ pub async fn pr_merge_impl(
     number: u64,
     options: MergeRequestOptions,
 ) -> AppResult<String> {
-    let (client, path) = client_for(state, &repo, &remote)?;
+    let (client, path) = client_for(state, &repo, &remote).await?;
     client.merge(&path, number, &options).await
 }
 
@@ -1141,7 +1234,7 @@ pub async fn pr_close(state: State<'_, AppState>, repo: String, remote: String, 
 }
 
 pub async fn pr_close_impl(state: &AppState, repo: String, remote: String, number: u64) -> AppResult<()> {
-    let (client, path) = client_for(state, &repo, &remote)?;
+    let (client, path) = client_for(state, &repo, &remote).await?;
     client.close(&path, number).await
 }
 
@@ -1156,7 +1249,7 @@ pub async fn pr_comments(
 }
 
 pub async fn pr_comments_impl(state: &AppState, repo: String, remote: String, number: u64) -> AppResult<Vec<forge::Comment>> {
-    let (client, path) = client_for(state, &repo, &remote)?;
+    let (client, path) = client_for(state, &repo, &remote).await?;
     client.comments(&path, number).await
 }
 
@@ -1178,7 +1271,7 @@ pub async fn pr_add_comment_impl(
     number: u64,
     body: String,
 ) -> AppResult<forge::Comment> {
-    let (client, path) = client_for(state, &repo, &remote)?;
+    let (client, path) = client_for(state, &repo, &remote).await?;
     client.add_comment(&path, number, &body).await
 }
 
@@ -1188,7 +1281,7 @@ pub async fn pr_checkout(state: State<'_, AppState>, repo: String, remote: Strin
 }
 
 pub async fn pr_checkout_impl(state: &AppState, repo: String, remote: String, number: u64) -> AppResult<String> {
-    let (client, _) = client_for(state, &repo, &remote)?;
+    let (client, _) = client_for(state, &repo, &remote).await?;
     let kind = client.kind;
     writing(repo.clone(), move || {
         ops::checkout_review_ref(&p(&repo), &remote, &kind.review_ref(number), &kind.review_branch(number))
@@ -1340,6 +1433,7 @@ pub async fn account_add_impl(
         s.accounts.push(account);
         state.save(&s)?;
     }
+    account_choices().lock().unwrap().clear();
     Ok(account_views(state))
 }
 
@@ -1355,6 +1449,7 @@ pub fn account_remove_impl(state: &AppState, id: String) -> AppResult<Vec<Accoun
         s.accounts.retain(|a| a.id != id);
         state.save(&s)?;
     }
+    account_choices().lock().unwrap().clear();
     Ok(account_views(state))
 }
 
@@ -1476,6 +1571,10 @@ pub async fn account_import_gh_impl(state: &AppState, host: Option<String>) -> A
 }
 
 #[cfg(test)]
+#[path = "feature_tests.rs"]
+mod feature_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1506,6 +1605,94 @@ mod tests {
         assert_eq!(env[1], ("GIT_CONFIG_KEY_0".into(), "http.https://github.com/.extraHeader".into()));
         assert_eq!(env[2].1, format!("Authorization: Basic {}", crate::git::remote::base64(b"x-access-token:tok123")));
         assert!(auth_env(&state, &["git@github.com:pod/app.git".into()]).is_empty(), "ssh remotes never get tokens");
+    }
+
+    fn state_with_accounts(dir: &std::path::Path, host: &str, api: Option<&str>, users: &[(&str, &str)]) -> AppState {
+        let ids: Vec<String> = users.iter().map(|(u, _)| format!("github:{host}:{u}")).collect();
+        let secrets: serde_json::Map<String, serde_json::Value> =
+            ids.iter().zip(users).map(|(id, (_, tok))| (id.clone(), serde_json::Value::from(*tok))).collect();
+        std::fs::write(dir.join("secrets.json"), serde_json::to_vec(&secrets).unwrap()).unwrap();
+        let state = crate::build_state(dir).unwrap();
+        for (id, (user, _)) in ids.into_iter().zip(users) {
+            state.settings.lock().unwrap().accounts.push(forge::Account {
+                id,
+                kind: ForgeKind::Github,
+                base_url: format!("https://{host}"),
+                username: Some((*user).into()),
+                avatar_url: None,
+                api_url: api.map(String::from),
+            });
+        }
+        state
+    }
+
+    fn header_for(env: &[(String, String)], key: &str) -> Option<String> {
+        let i = env.iter().position(|(_, v)| v == key)?;
+        let idx = env[i].0.strip_prefix("GIT_CONFIG_KEY_")?;
+        env.iter().find(|(k, _)| k == &format!("GIT_CONFIG_VALUE_{idx}")).map(|(_, v)| v.clone())
+    }
+
+    fn basic(token: &str) -> String {
+        format!("Authorization: Basic {}", crate::git::remote::base64(format!("x-access-token:{token}").as_bytes()))
+    }
+
+    #[test]
+    fn picks_the_account_named_like_the_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = "owner-pick.example";
+        let state = state_with_accounts(dir.path(), host, None, &[("work", "tok-work"), ("me", "tok-me")]);
+        let env = auth_env(&state, &[format!("https://{host}/me/private.git")]);
+        assert_eq!(header_for(&env, &format!("http.https://{host}/.extraHeader")), Some(basic("tok-me")));
+        let env = auth_env(&state, &[format!("https://{host}/someone/else.git")]);
+        assert_eq!(
+            header_for(&env, &format!("http.https://{host}/.extraHeader")),
+            Some(basic("tok-work")),
+            "added first wins otherwise"
+        );
+    }
+
+    #[test]
+    fn scopes_headers_per_remote_when_accounts_differ() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = "scoped.example";
+        let state = state_with_accounts(dir.path(), host, None, &[("work", "tok-work"), ("me", "tok-me")]);
+        let team = format!("https://{host}/team/app.git");
+        account_choices().lock().unwrap().insert(format!("{host}/team/app"), format!("github:{host}:me"));
+        let env = auth_env(&state, &[team.clone(), format!("https://{host}/work/tool.git")]);
+        assert_eq!(header_for(&env, &format!("http.{team}.extraHeader")), Some(basic("tok-me")));
+        assert_eq!(header_for(&env, &format!("http.https://{host}/work/tool.git.extraHeader")), Some(basic("tok-work")));
+        assert_eq!(header_for(&env, &format!("http.https://{host}/.extraHeader")), None);
+    }
+
+    #[test]
+    fn learns_which_account_can_see_the_repository() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        std::thread::spawn(move || {
+            for mut req in server.incoming_requests() {
+                let mut sink = String::new();
+                let _ = req.as_reader().read_to_string(&mut sink);
+                let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.to_string());
+                let ok = req.url() == "/repos/team/app" && auth.as_deref() == Some("Bearer tok-member");
+                let _ = req.respond(tiny_http::Response::from_string("{}").with_status_code(if ok { 200 } else { 404 }));
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let host = format!("127.0.0.1:{port}");
+        let api = format!("http://{host}");
+        let state = state_with_accounts(dir.path(), &host, Some(&api), &[("outsider", "tok-outsider"), ("member", "tok-member")]);
+        let url = format!("https://{host}/team/app.git");
+        let before = auth_env(&state, std::slice::from_ref(&url));
+        assert_eq!(header_for(&before, &format!("http.https://{host}/.extraHeader")), Some(basic("tok-outsider")));
+        tauri::async_runtime::block_on(learn_accounts(&state, std::slice::from_ref(&url)));
+        let after = auth_env(&state, std::slice::from_ref(&url));
+        assert_eq!(header_for(&after, &format!("http.https://{host}/.extraHeader")), Some(basic("tok-member")));
+        let settings = state.settings.lock().unwrap().clone();
+        let remote = repo::Remote { name: "origin".into(), fetch_url: url.clone(), push_url: url.clone() };
+        assert_eq!(resolve_remote(&settings, &remote).account_user.as_deref(), Some("member"), "pull requests use it too");
+        let hidden = format!("https://{host}/other/secret.git");
+        tauri::async_runtime::block_on(learn_accounts(&state, std::slice::from_ref(&hidden)));
+        assert!(auth_env(&state, &[hidden]).is_empty(), "no account sees it, so leave it to git's own credentials");
     }
 
     #[test]
