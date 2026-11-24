@@ -1,10 +1,20 @@
 name: Release
 
-# Push a tag like v0.2.0 (see scripts/set-version.sh) to build the macOS app
-# and publish it twice:
-#   * here, as a release of this (private) repository;
-#   * in the public gyeongjin-kim/MobyD-releases repository, which serves the
-#     download link and the update feed (latest.json) running apps read.
+# Every push to main publishes a new version:
+#   1. `prepare` picks the version: the one in package.json/tauri.conf.json when
+#      it is ahead of the latest v* tag (set by hand with scripts/set-version.sh
+#      for a minor or major bump), otherwise the latest tag with the patch
+#      number raised. It commits "Release X.Y.Z" on top of the push when the
+#      files need it, then pushes that commit to main with the tag vX.Y.Z, and
+#      fast-forwards develop to it when develop has nothing newer.
+#   2. `macos` builds that tag, runs every check, and publishes it twice:
+#      * here, as a release of this (private) repository;
+#      * in the public gyeongjin-kim/MobyD-releases repository, which serves the
+#        download link and the update feed (latest.json) running apps read.
+# Pushes made with the workflow token never start workflows, so the release
+# commit does not trigger another release. If main moved on while a run was
+# preparing, that run stops and the run for the newer push releases both.
+#
 # This repository cannot write to the public one directly, so the files are
 # pushed to its `incoming` branch with a deploy key and a workflow there
 # turns them into the release.
@@ -13,29 +23,87 @@ name: Release
 #          RELEASES_DEPLOY_KEY (write access to MobyD-releases).
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re)build, e.g. v0.1.0"
-        required: true
+        description: "Existing tag to rebuild, e.g. v0.1.0 (empty: release main like a push)"
+        required: false
 
 permissions:
   contents: write
 
+# one release at a time, in push order
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: release
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: Pick the version and tag it
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Rebuild an existing tag
+        if: github.event.inputs.tag != ''
+        id: given
+        run: echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.given.outputs.tag == ''
+        with:
+          ref: main
+          fetch-depth: 0 # tags and the history the release notes are made from
+
+      - name: Bump, commit and tag
+        if: steps.given.outputs.tag == ''
+        id: bump
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ] && [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "main moved on since this push; the run for the newer push releases it"
+            exit 0
+          fi
+          LATEST="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+          LATEST="${LATEST#v}"
+          FILE="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [ -z "$LATEST" ] || [ "$(printf '%s\n%s\n' "$LATEST" "$FILE" | sort -V | tail -1)" = "$FILE" ] && [ "$FILE" != "$LATEST" ]; then
+            NEXT="$FILE"
+          else
+            IFS=. read -r MA MI PA <<< "${LATEST%%-*}"
+            NEXT="$MA.$MI.$((PA + 1))"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$NEXT" != "$FILE" ]; then
+            scripts/set-version.sh "$NEXT"
+            git commit -qam "Release $NEXT"
+          fi
+          git tag "v$NEXT"
+          if ! git push --atomic origin HEAD:main "v$NEXT"; then
+            echo "main moved on since this push; the run for the newer push releases it"
+            exit 0
+          fi
+          # keep develop on the released version when it has nothing newer
+          git push origin HEAD:develop 2>/dev/null || echo "develop has newer commits; left as is"
+          echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Output
+        id: tag
+        run: echo "tag=${{ steps.given.outputs.tag || steps.bump.outputs.tag }}" >> "$GITHUB_OUTPUT"
+
   macos:
     name: Build macOS (Apple silicon)
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
     runs-on: macos-latest
     env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      TAG: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: refs/tags/${{ needs.prepare.outputs.tag }}
           fetch-depth: 0 # the release notes list the commits since the previous tag
 
       - name: Check the tag matches the app version
@@ -107,7 +175,7 @@ jobs:
 
           # commit subjects since the previous release, without the version bumps
           PREV="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
-          git log --pretty='- %s' ${PREV:+"$PREV.."}"$TAG" | grep -v '^- Release ' > "$RUNNER_TEMP/notes.md" || true
+          git log --no-merges --pretty='- %s' ${PREV:+"$PREV.."}"$TAG" | grep -v '^- Release ' > "$RUNNER_TEMP/notes.md" || true
           test -s "$RUNNER_TEMP/notes.md" || echo "- Maintenance release" > "$RUNNER_TEMP/notes.md"
 
           OUT="$RUNNER_TEMP/public"
