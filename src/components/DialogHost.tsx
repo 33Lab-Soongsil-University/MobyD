@@ -140,9 +140,11 @@ export function DialogHost() {
           );
         })}
         <div className="dialog-actions">
-          <button type="button" className="btn" onClick={cancel} ref={cancelBtn}>
-            {dialog.cancelLabel ?? t("취소")}
-          </button>
+          {!dialog.infoOnly && (
+            <button type="button" className="btn" onClick={cancel} ref={cancelBtn}>
+              {dialog.cancelLabel ?? t("취소")}
+            </button>
+          )}
           <button type="submit" className={"btn " + (dialog.danger ? "danger" : "primary")} disabled={missing} ref={confirmBtn}>
             {dialog.confirmLabel ?? t("확인")}
           </button>

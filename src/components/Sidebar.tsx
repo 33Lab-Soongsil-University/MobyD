@@ -26,6 +26,7 @@ import {
 import { api, errorText } from "../lib/api";
 import type { PullRequest, RefInfo } from "../lib/types";
 import { useRepo } from "../repo/RepoContext";
+import { DeployKeys } from "./SshKeys";
 import {
   addWorktreeFlow,
   checkoutRef,
@@ -314,6 +315,22 @@ export function Sidebar() {
                 onContextMenu={(e) =>
                   openMenu(e, [
                     { label: `${fr.remote} fetch`, icon: <RefreshCw size={14} />, onClick: () => ctx.run("Fetch", () => api.fetch(ctx.path, fr.remote), { success: t("{remote} fetch 완료", { remote: fr.remote }) }) },
+                    ...(fr.target && fr.accountId
+                      ? [
+                          {
+                            label: t("배포 키…"),
+                            icon: <KeyRound size={14} />,
+                            onClick: () =>
+                              void ask({
+                                title: t("배포 키 · {repo}", { repo: fr.target!.path }),
+                                message: <DeployKeys repo={ctx.path} remote={fr.remote} />,
+                                confirmLabel: t("닫기"),
+                                infoOnly: true,
+                                wide: true,
+                              }),
+                          },
+                        ]
+                      : []),
                     ...(sshKeyCandidates(ctx).some((r) => r.remote === fr.remote)
                       ? [{ label: t("SSH 키로 연결…"), icon: <KeyRound size={14} />, onClick: () => connectWithSshKey(ctx, fr.remote) }]
                       : []),

@@ -1415,6 +1415,60 @@ pub async fn account_repos_impl(state: &AppState, id: String) -> AppResult<Vec<f
     account_client(state, &id)?.repos().await
 }
 
+// ----- SSH keys ------------------------------------------------------------------
+
+/// Public keys in `~/.ssh` on this Mac (`host` empty) or on an SSH host.
+#[tauri::command]
+pub async fn ssh_keys(host: Option<String>) -> AppResult<Vec<crate::git::remote::SshKey>> {
+    let host = host.filter(|h| !h.trim().is_empty());
+    if let Some(h) = &host {
+        if h.starts_with('-') || h.contains(char::is_whitespace) {
+            return Err(AppError::invalid(crate::tr!("호스트 이름이 올바르지 않습니다", "Invalid host name")));
+        }
+    }
+    blocking(move || crate::git::remote::list_keys(host.as_deref())).await
+}
+
+/// The account's own SSH keys on its service.
+#[tauri::command]
+pub async fn account_ssh_keys(state: State<'_, AppState>, id: String) -> AppResult<Vec<forge::RegisteredKey>> {
+    account_ssh_keys_impl(&state, id).await
+}
+
+pub async fn account_ssh_keys_impl(state: &AppState, id: String) -> AppResult<Vec<forge::RegisteredKey>> {
+    account_client(state, &id)?.account_keys().await.map_err(|e| match e {
+        AppError::Http(m) if m.contains(" 403") || m.contains(" 404") => AppError::Http(
+            crate::tr!(
+                "SSH 키를 읽을 권한이 없습니다. 이 계정을 다시 연결하세요.",
+                "No permission to read SSH keys. Reconnect this account."
+            )
+            .into(),
+        ),
+        e => e,
+    })
+}
+
+/// Deploy keys of the repository behind `remote`.
+#[tauri::command]
+pub async fn deploy_keys(state: State<'_, AppState>, repo: String, remote: String) -> AppResult<Vec<forge::RegisteredKey>> {
+    deploy_keys_impl(&state, repo, remote).await
+}
+
+pub async fn deploy_keys_impl(state: &AppState, repo: String, remote: String) -> AppResult<Vec<forge::RegisteredKey>> {
+    let (client, path) = client_for(state, &repo, &remote).await?;
+    client.deploy_keys(&path).await
+}
+
+#[tauri::command]
+pub async fn deploy_key_delete(state: State<'_, AppState>, repo: String, remote: String, id: u64) -> AppResult<()> {
+    deploy_key_delete_impl(&state, repo, remote, id).await
+}
+
+pub async fn deploy_key_delete_impl(state: &AppState, repo: String, remote: String, id: u64) -> AppResult<()> {
+    let (client, path) = client_for(state, &repo, &remote).await?;
+    client.delete_deploy_key(&path, id).await
+}
+
 fn normalize_remote(url: &str) -> Option<String> {
     let url = url.trim();
     if url.is_empty() {

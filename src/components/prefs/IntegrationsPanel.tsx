@@ -42,6 +42,7 @@ export function IntegrationsPanel() {
                   useUi.getState().setModal(null);
                   openManager("clone", a.id);
                 }}
+                onReconnect={() => setAdding(true)}
               />
             ))}
           </div>

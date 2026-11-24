@@ -834,6 +834,85 @@ pub fn exec_git(t: &SshTarget, args: &[String], env: &[(&str, &str)], stdin: Opt
     Ok(out)
 }
 
+// ----- SSH keys ----------------------------------------------------------------
+
+/// A public key in `~/.ssh` (private keys are never read).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SshKey {
+    pub path: String,
+    /// `ED25519`, `RSA`, `ECDSA`…
+    pub kind: String,
+    pub bits: u32,
+    /// `SHA256:…`
+    pub fingerprint: String,
+    pub comment: String,
+    /// `type base64`, the form services store; used to match registered keys.
+    pub public_key: String,
+    /// Loaded in this Mac's ssh-agent (local keys only).
+    pub in_agent: bool,
+}
+
+/// Lists `~/.ssh/*.pub` with `ssh-keygen -l` (POSIX sh, also Git Bash on Windows).
+pub const LIST_KEYS_SCRIPT: &str = "for f in \"$HOME\"/.ssh/*.pub; do [ -f \"$f\" ] || continue; \
+fp=$(ssh-keygen -lf \"$f\" 2>/dev/null) || continue; \
+printf '%s\\t%s\\t%s\\n' \"$f\" \"$fp\" \"$(cut -d' ' -f1,2 \"$f\")\"; done\n";
+
+/// `256 SHA256:abc comment words (ED25519)` → (bits, fingerprint, comment, kind).
+fn parse_fingerprint_line(line: &str) -> Option<(u32, String, String, String)> {
+    let (bits, rest) = line.trim().split_once(' ')?;
+    let (fp, rest) = rest.split_once(' ').unwrap_or((rest, ""));
+    let (comment, kind) = match rest.rfind(" (").or_else(|| rest.starts_with('(').then_some(0)) {
+        Some(i) => (rest[..i].trim(), rest[i..].trim().trim_start_matches('(').trim_end_matches(')')),
+        None => (rest.trim(), ""),
+    };
+    let comment = if comment == "no comment" { "" } else { comment };
+    Some((bits.parse().ok()?, fp.to_string(), comment.to_string(), kind.to_string()))
+}
+
+pub fn parse_key_list(text: &str) -> Vec<SshKey> {
+    text.lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(3, '\t');
+            let (path, fp, key) = (parts.next()?, parts.next()?, parts.next().unwrap_or_default());
+            let (bits, fingerprint, comment, kind) = parse_fingerprint_line(fp)?;
+            Some(SshKey {
+                path: path.to_string(),
+                kind,
+                bits,
+                fingerprint,
+                comment,
+                public_key: key.trim().to_string(),
+                in_agent: false,
+            })
+        })
+        .collect()
+}
+
+/// Public keys on this Mac (`host` = None) or on an SSH host.
+pub fn list_keys(host: Option<&str>) -> AppResult<Vec<SshKey>> {
+    let Some(host) = host else {
+        let out = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(LIST_KEYS_SCRIPT)
+            .env("PATH", crate::git::runner::search_path())
+            .stdin(Stdio::null())
+            .output()?;
+        let mut keys = parse_key_list(&String::from_utf8_lossy(&out.stdout));
+        if let Ok(agent) =
+            Command::new("ssh-add").arg("-l").env("PATH", crate::git::runner::search_path()).stdin(Stdio::null()).output()
+        {
+            let loaded = String::from_utf8_lossy(&agent.stdout).to_string();
+            for k in &mut keys {
+                k.in_agent = loaded.contains(&k.fingerprint);
+            }
+        }
+        return Ok(keys);
+    };
+    let out = run_script(host, &format!("{PRELUDE}{LIST_KEYS_SCRIPT}"), None)?;
+    Ok(parse_key_list(&String::from_utf8_lossy(&out.stdout)))
+}
+
 // ----- browsing --------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -1159,6 +1238,21 @@ mod tests {
         assert!(s.contains("export GIT_OPTIONAL_LOCKS=0"));
         assert!(s.trim_end().ends_with("log --format=%s 'a b'"));
         assert!(git_script("~/code/x", &[], &[]).contains("cd -- \"$HOME\"/code/x"));
+    }
+
+    #[test]
+    fn parses_ssh_keygen_listings() {
+        let text = "/home/me/.ssh/id_ed25519.pub\t256 SHA256:AbC+/1 me@laptop (ED25519)\tssh-ed25519 AAAAkey\n\
+                    /home/me/.ssh/old.pub\t2048 SHA256:Zz9 no comment (RSA)\tssh-rsa AAAArsa\n\
+                    /home/me/.ssh/mobyd_x.pub\t256 SHA256:Q mobyd me/app on noah box (ED25519)\tssh-ed25519 AAAAm\n\
+                    garbage line\n";
+        let keys = parse_key_list(text);
+        assert_eq!(keys.len(), 3);
+        assert_eq!((keys[0].bits, keys[0].kind.as_str(), keys[0].comment.as_str()), (256, "ED25519", "me@laptop"));
+        assert_eq!(keys[0].fingerprint, "SHA256:AbC+/1");
+        assert_eq!(keys[0].public_key, "ssh-ed25519 AAAAkey");
+        assert_eq!((keys[1].comment.as_str(), keys[1].kind.as_str()), ("", "RSA"));
+        assert_eq!(keys[2].comment, "mobyd me/app on noah box");
     }
 
     #[test]

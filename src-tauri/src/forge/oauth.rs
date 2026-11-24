@@ -19,7 +19,7 @@ pub const GITHUB_CLIENT_ID: &str = "Ov23lieIItaI2GuawY0B";
 
 /// Scopes: private repositories and pushes (`repo`), organisation repositories
 /// (`read:org`), the profile (`read:user`) and pushing workflow files (`workflow`).
-pub const GITHUB_SCOPES: &str = "repo read:org read:user workflow";
+pub const GITHUB_SCOPES: &str = "repo read:org read:user workflow read:public_key";
 pub const GITLAB_SCOPES: &str = "api read_user read_repository write_repository";
 
 /// The OAuth client to use for a server: an explicit setting, then

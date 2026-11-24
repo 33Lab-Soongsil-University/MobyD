@@ -19,6 +19,7 @@ import { api, errorText } from "../lib/api";
 import type { Account, DeviceStart, ForgeKind } from "../lib/types";
 import { confirmAction, toast, useUi } from "../store";
 import { ForgeIcon } from "./ForgeIcon";
+import { AccountKeys } from "./SshKeys";
 import { t } from "../lib/i18n";
 
 export type ServiceId = "github" | "ghe" | "gitlab" | "gitlab-self" | "gitea";
@@ -466,15 +467,20 @@ export function AccountRow({
   account,
   onRemoved,
   onBrowse,
+  onReconnect,
 }: {
   account: Account;
   onRemoved: (a: Account[]) => void;
   onBrowse?: () => void;
+  /** Sign in to the same account again (to grant new permissions). */
+  onReconnect?: () => void;
 }) {
   const bump = useUi((s) => s.bumpAccounts);
+  const [keys, setKeys] = useState(false);
   const github =
     account.kind === "github" && hostOf(account.baseUrl) === "github.com";
   return (
+    <>
     <div className="account">
       {account.avatarUrl ? (
         <img
@@ -513,6 +519,11 @@ export function AccountRow({
             <ExternalLink size={14} />
           </button>
         )}
+        {account.hasToken && (
+          <button className={"icon-btn" + (keys ? " on" : "")} title={t("이 계정의 SSH 키")} onClick={() => setKeys((v) => !v)}>
+            <KeyRound size={14} />
+          </button>
+        )}
         {onBrowse && (
           <button className="btn sm" onClick={onBrowse}>
             {t("저장소 복제")}
@@ -542,6 +553,12 @@ export function AccountRow({
         </button>
       </div>
     </div>
+    {keys && (
+      <div className="account-keys">
+        <AccountKeys account={account} onReconnect={() => onReconnect?.()} />
+      </div>
+    )}
+    </>
   );
 }
 

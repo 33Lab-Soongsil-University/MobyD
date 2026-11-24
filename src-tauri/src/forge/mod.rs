@@ -248,6 +248,40 @@ pub struct Viewer {
     pub name: Option<String>,
 }
 
+/// A public key registered on the service: a repository's deploy key or one of
+/// the account's own SSH keys.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisteredKey {
+    pub id: u64,
+    pub title: String,
+    /// `type base64` (any comment stripped).
+    pub key: String,
+    /// Deploy keys: write access. Always true for account keys.
+    pub can_write: bool,
+    pub created_at: Option<String>,
+    pub last_used: Option<String>,
+}
+
+fn registered_key(v: &Value, deploy: bool) -> RegisteredKey {
+    let key: Vec<&str> = v.get("key").and_then(Value::as_str).unwrap_or_default().split_whitespace().take(2).collect();
+    let can_write = if !deploy {
+        true
+    } else if v.get("can_push").is_some() {
+        b(v, "can_push")
+    } else {
+        !v.get("read_only").and_then(Value::as_bool).unwrap_or(true)
+    };
+    RegisteredKey {
+        id: u(v, "id").unwrap_or(0),
+        title: s(v, "title"),
+        key: key.join(" "),
+        can_write,
+        created_at: opt_s(v, "created_at"),
+        last_used: opt_s(v, "last_used").or_else(|| opt_s(v, "last_used_at")),
+    }
+}
+
 /// One authenticated (or anonymous) connection to a forge API.
 pub struct ForgeClient {
     pub kind: ForgeKind,
@@ -381,6 +415,35 @@ impl ForgeClient {
             .and_then(|v| v.get("message").and_then(Value::as_str).map(String::from))
             .unwrap_or_else(|| text.chars().take(200).collect());
         Err(AppError::Http(format!("{} {}: {message}", self.kind.label(), status.as_u16())))
+    }
+
+    /// Deploy keys of `repo`.
+    pub async fn deploy_keys(&self, repo: &str) -> AppResult<Vec<RegisteredKey>> {
+        let route = match self.kind {
+            ForgeKind::Gitlab => format!("/projects/{}/deploy_keys?per_page=100", urlencoding::encode(repo)),
+            ForgeKind::Github => format!("/repos/{repo}/keys?per_page=100"),
+            ForgeKind::Gitea => format!("/repos/{repo}/keys?limit=50"),
+        };
+        let v = self.send(reqwest::Method::GET, &route, None).await?;
+        Ok(v.as_array().map(|a| a.iter().map(|k| registered_key(k, true)).collect()).unwrap_or_default())
+    }
+
+    pub async fn delete_deploy_key(&self, repo: &str, id: u64) -> AppResult<()> {
+        let route = match self.kind {
+            ForgeKind::Gitlab => format!("/projects/{}/deploy_keys/{id}", urlencoding::encode(repo)),
+            ForgeKind::Github | ForgeKind::Gitea => format!("/repos/{repo}/keys/{id}"),
+        };
+        self.send(reqwest::Method::DELETE, &route, None).await.map(|_| ())
+    }
+
+    /// The signed-in account's own SSH keys (GitHub needs the `read:public_key` scope).
+    pub async fn account_keys(&self) -> AppResult<Vec<RegisteredKey>> {
+        let route = match self.kind {
+            ForgeKind::Gitea => "/user/keys?limit=50",
+            _ => "/user/keys?per_page=100",
+        };
+        let v = self.send(reqwest::Method::GET, route, None).await?;
+        Ok(v.as_array().map(|a| a.iter().map(|k| registered_key(k, false)).collect()).unwrap_or_default())
     }
 
     /// `known_hosts` lines for the service's published SSH host keys (GitHub
@@ -848,6 +911,36 @@ mod http_tests {
         let seen = seen.lock().unwrap();
         assert_eq!(seen[0].url, "/projects/grp%2Fsub%2Fapp/deploy_keys");
         assert_eq!(seen[0].body["can_push"], json!(true));
+    }
+
+    #[test]
+    fn lists_and_deletes_registered_keys() {
+        use serde_json::json;
+        let (api, seen) = mock(vec![
+            (
+                200,
+                json!([{"id": 7, "title": "MobyD · noah", "key": "ssh-ed25519 AAAA1 comment", "read_only": false, "created_at": "2026-11-24T01:00:00Z", "last_used": null},
+                         {"id": 8, "title": "ci", "key": "ssh-rsa AAAA2", "read_only": true}]),
+            ),
+            (204, Value::Null),
+            (200, json!([{"id": 3, "title": "laptop", "key": "ssh-ed25519 AAAA3", "created_at": "2025-01-01T00:00:00Z"}])),
+            (404, json!({"message": "Not Found"})),
+        ]);
+        let c = client(ForgeKind::Github, api);
+        let keys = block_on(c.deploy_keys("me/app")).unwrap();
+        assert_eq!((keys[0].id, keys[0].key.as_str(), keys[0].can_write), (7, "ssh-ed25519 AAAA1", true));
+        assert!(!keys[1].can_write && keys[1].created_at.is_none());
+        block_on(c.delete_deploy_key("me/app", 7)).unwrap();
+        let mine = block_on(c.account_keys()).unwrap();
+        assert_eq!((mine[0].title.as_str(), mine[0].can_write), ("laptop", true));
+        assert!(block_on(c.account_keys()).is_err(), "missing read:public_key");
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].url, "/repos/me/app/keys?per_page=100");
+        assert_eq!((seen[1].method.as_str(), seen[1].url.as_str()), ("DELETE", "/repos/me/app/keys/7"));
+        assert_eq!(seen[2].url, "/user/keys?per_page=100");
+
+        let (api, _) = mock(vec![(200, json!([{"id": 1, "title": "t", "key": "ssh-ed25519 B", "can_push": false}]))]);
+        assert!(!block_on(client(ForgeKind::Gitlab, api).deploy_keys("g/app")).unwrap()[0].can_write);
     }
 
     #[test]

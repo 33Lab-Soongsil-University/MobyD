@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ZoomIn, ZoomOut, X, Settings2, Palette, PlugZap, Server, Monitor, Moon, Sun, FolderSearch, Loader2, CheckCircle2, XCircle, SlidersHorizontal, AlertTriangle } from "lucide-react";
+import { ZoomIn, ZoomOut, X, Settings2, Palette, PlugZap, Server, Monitor, Moon, Sun, FolderSearch, Loader2, CheckCircle2, XCircle, SlidersHorizontal, AlertTriangle, KeyRound } from "lucide-react";
 import { api, errorText } from "../../lib/api";
+import { SshKeyList } from "../SshKeys";
 import type { AppInfo, HostPrefs, ShellPref, SshHost, TailscalePeer } from "../../lib/types";
 import { applyTheme, getThemePref, type ThemePref } from "../../lib/theme";
 import { getCloneDir, pickDirectory, setCloneDir } from "../../lib/actions";
@@ -200,6 +201,7 @@ function HostSettings({
   const [shell, setShell] = useState<ShellPref>(prefs.shell);
   const [address, setAddress] = useState(prefs.address ?? "");
   const [shareTokens, setShareTokens] = useState(prefs.shareTokens ?? false);
+  const [showKeys, setShowKeys] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const dirty =
@@ -268,6 +270,13 @@ function HostSettings({
           <AlertTriangle size={12} /> {t("혼자 쓰는 PC에만 켜세요. 실행 중에는 그 PC 관리자가 토큰을 볼 수 있습니다.")}
         </small>
       </div>
+      {showKeys ? (
+        <SshKeyList host={host.alias} />
+      ) : (
+        <button className="btn sm key-toggle" onClick={() => setShowKeys(true)}>
+          <KeyRound size={12} /> {t("이 호스트의 SSH 키 보기")}
+        </button>
+      )}
       {err && <ErrorBox text={err} />}
       <div className="dialog-actions">
         <button
@@ -324,6 +333,9 @@ function SshPane() {
           { config: <code>~/.ssh/config</code> },
         )}
       </p>
+      <div className="mac-keys">
+        <SshKeyList host={null} />
+      </div>
       <div className="account-list">
         {hosts.length === 0 && <p className="muted">{t("~/.ssh/config에 Host 항목이 없습니다.")}</p>}
         {hosts.map((h) => {

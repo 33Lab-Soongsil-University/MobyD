@@ -50,6 +50,8 @@ export interface DialogSpec {
   cancelLabel?: string;
   danger?: boolean;
   wide?: boolean;
+  /** Only a close button (the content is the point, nothing to confirm). */
+  infoOnly?: boolean;
   resolve: (values: DialogValues | null) => void;
 }
 

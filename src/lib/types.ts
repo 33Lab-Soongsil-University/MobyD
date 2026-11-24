@@ -384,3 +384,25 @@ export interface DevicePoll {
   interval: number;
   accounts: Account[] | null;
 }
+
+/** A public key in ~/.ssh (private keys are never read). */
+export interface SshKey {
+  path: string;
+  kind: string;
+  bits: number;
+  fingerprint: string;
+  comment: string;
+  /** `type base64`, matched against keys registered on services. */
+  publicKey: string;
+  inAgent: boolean;
+}
+
+/** A deploy key of a repository, or one of an account's SSH keys. */
+export interface RegisteredKey {
+  id: number;
+  title: string;
+  key: string;
+  canWrite: boolean;
+  createdAt: string | null;
+  lastUsed: string | null;
+}

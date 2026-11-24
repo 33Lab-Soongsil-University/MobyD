@@ -10,6 +10,8 @@ import type {
   DiffRequest,
   DirListing,
   HostPrefs,
+  RegisteredKey,
+  SshKey,
   SshHost,
   TailscalePeer,
   Blame,
@@ -117,6 +119,10 @@ export const api = {
   addRemote: (repo: string, name: string, url: string) => invoke<string>("remote_add", { repo, name, url }),
   removeRemote: (repo: string, name: string) => invoke<string>("remote_remove", { repo, name }),
   useSshKey: (repo: string, remote: string) => invoke<string>("remote_use_ssh_key", { repo, remote }),
+  sshKeys: (host: string | null) => invoke<SshKey[]>("ssh_keys", { host }),
+  accountSshKeys: (id: string) => invoke<RegisteredKey[]>("account_ssh_keys", { id }),
+  deployKeys: (repo: string, remote: string) => invoke<RegisteredKey[]>("deploy_keys", { repo, remote }),
+  deleteDeployKey: (repo: string, remote: string, id: number) => invoke<void>("deploy_key_delete", { repo, remote, id }),
 
   stashSave: (repo: string, message: string | null, includeUntracked: boolean, stagedOnly = false) =>
     invoke<string>("stash_save", { repo, message, includeUntracked, stagedOnly }),
