@@ -1,6 +1,6 @@
 [package]
 name = "mobyd"
-version = "0.1.9"
+version = "0.1.10"
 description = "MobyD — a white-whale Git client"
 authors = ["MobyD contributors"]
 license = "MIT OR Apache-2.0"
